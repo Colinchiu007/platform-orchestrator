@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}控制台 — Platform Orchestrator{% endblock %}
+{% block content %}
+<h1>控制台</h1>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-number">{{ stats.articles }}</div>
+        <div class="stat-label">文章</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number">{{ stats.videos }}</div>
+        <div class="stat-label">视频任务</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number">{{ stats.publishes }}</div>
+        <div class="stat-label">发布任务</div>
+    </div>
+</div>
+
+<div class="actions">
+    <a href="/articles" class="btn">📝 文章管理</a>
+    <a href="/articles/new" class="btn">➕ 新建文章</a>
+    <a href="/jobs" class="btn">🎥 任务列表</a>
+</div>
+
+<h2>最近文章</h2>
+<div id="recent-articles" hx-get="/api/articles/?page_size=5" hx-trigger="load" hx-swap="innerHTML">
+    加载中...
+</div>
+{% endblock %}

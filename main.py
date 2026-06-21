@@ -10,10 +10,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from config import settings
 from db import init_db
-from routers import aggregator, auth, prompt, publish, splitter, video
+from routers import aggregator, auth, prompt, publish, splitter, video, web
 
 
 @asynccontextmanager
@@ -50,6 +51,12 @@ def create_app() -> FastAPI:
         from middleware.feature_gate import load_feature_gates
         gates = load_feature_gates()
         return {"features": gates}
+
+    # Static files
+    app.mount("/static", StaticFiles(directory="static"), name="static")
+
+    # Web frontend (Jinja2 templates + HTMX)
+    app.include_router(web.router)
 
     # Register module routers
     app.include_router(auth.router)

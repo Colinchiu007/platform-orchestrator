@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     jimeng_api_key: str = ""
     vidu_api_key: str = ""
 
+    # ── Publishing ──────────────────────────────────────────────────────
+    wechat_appid: str = ""
+    wechat_appsecret: str = ""
+
     # ── Feature Gates ───────────────────────────────────────────────────
     feature_gates_path: str = "/srv/projects/feature_gates.yaml"
 

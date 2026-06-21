@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}文章列表 — Platform Orchestrator{% endblock %}
+{% block content %}
+<h1>文章管理</h1>
+
+<div class="card">
+    <h3>抓取新文章</h3>
+    <form hx-post="/api/articles/fetch" hx-target="#fetch-result" hx-swap="innerHTML">
+        <input type="url" name="url" placeholder="https://example.com/article" required class="full-width">
+        <select name="rewrite_style">
+            <option value="">不改写</option>
+            <option value="轻松易懂">轻松易懂</option>
+            <option value="正式严谨">正式严谨</option>
+            <option value="吸引眼球">吸引眼球</option>
+            <option value="深度分析">深度分析</option>
+        </select>
+        <button type="submit" class="btn">抓取</button>
+    </form>
+    <div id="fetch-result"></div>
+</div>
+
+<h2>文章列表</h2>
+<div id="article-list" hx-get="/api/articles/" hx-trigger="load" hx-swap="innerHTML">
+    加载中...
+</div>
+{% endblock %}

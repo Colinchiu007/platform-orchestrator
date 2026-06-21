@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Platform Orchestrator{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/app.css">
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <a href="/">🎬 Video Platform</a>
+        </div>
+        <div class="nav-links">
+            {% if user %}
+            <a href="/dashboard">控制台</a>
+            <a href="/articles">文章</a>
+            <a href="/jobs">任务</a>
+            <span class="nav-user">{{ user.username }}</span>
+            <a href="/logout" class="btn-sm">退出</a>
+            {% else %}
+            <a href="/login" class="btn-sm">登录</a>
+            {% endif %}
+        </div>
+    </nav>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+        <p>Platform Orchestrator v0.1.0 — 4G ECS</p>
+    </footer>
+</body>
+</html>
