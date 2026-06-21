@@ -12,7 +12,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # ── App ─────────────────────────────────────────────────────────────
     app_name: str = "platform-orchestrator"
-    app_version: str = "0.1.0"
+    app_version: str = "0.2.0"
     debug: bool = False
 
     # ── Auth ────────────────────────────────────────────────────────────
