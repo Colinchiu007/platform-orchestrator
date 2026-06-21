@@ -40,9 +40,38 @@ async def init_db() -> None:
             )
         """)
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS articles (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                source_type TEXT NOT NULL DEFAULT 'url',
+                source_url TEXT,
+                source_content TEXT,
+                rewrite_style TEXT,
+                rewrite_length TEXT DEFAULT 'keep',
+                result_content TEXT,
+                word_count_original INTEGER,
+                word_count_result INTEGER,
+                status TEXT NOT NULL DEFAULT 'draft',
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS splits (
+                article_id TEXT PRIMARY KEY,
+                result_json TEXT NOT NULL,
+                tier_used TEXT,
+                total_scenes INTEGER DEFAULT 0,
+                total_duration REAL DEFAULT 0.0,
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (article_id) REFERENCES articles(id)
+            )
+        """)
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS jobs (
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL,
+                job_type TEXT NOT NULL DEFAULT 'video',
                 status TEXT NOT NULL DEFAULT 'pending',
                 input_data TEXT DEFAULT '{}',
                 output_data TEXT DEFAULT '{}',

@@ -10,15 +10,29 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    # ── App ─────────────────────────────────────────────────────────────
     app_name: str = "platform-orchestrator"
     app_version: str = "0.1.0"
     debug: bool = False
+
+    # ── Auth ────────────────────────────────────────────────────────────
     secret_key: str = "change-me-in-production-use-env-var"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 30
+
+    # ── Database ────────────────────────────────────────────────────────
     database_url: str = "orchestrator.db"
+
+    # ── LLM / AI ────────────────────────────────────────────────────────
+    openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_model: str = "gpt-4o-mini"
+
+    # ── Feature Gates ───────────────────────────────────────────────────
     feature_gates_path: str = "/srv/projects/feature_gates.yaml"
+
+    # ── CORS ────────────────────────────────────────────────────────────
     cors_origins: list[str] = [
         "http://localhost:5173",
         "http://localhost:3000",

@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
 from db import init_db
-from routers import aggregator, prompt, publish, splitter, video
+from routers import aggregator, auth, prompt, publish, splitter, video
 
 
 @asynccontextmanager
@@ -52,6 +52,7 @@ def create_app() -> FastAPI:
         return {"features": gates}
 
     # Register module routers
+    app.include_router(auth.router)
     app.include_router(aggregator.router, prefix="/api/articles", tags=["articles"])
     app.include_router(splitter.router, prefix="/api/articles", tags=["splitter"])
     app.include_router(prompt.router, prefix="/api/prompts", tags=["prompts"])
