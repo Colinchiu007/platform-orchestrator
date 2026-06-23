@@ -9,7 +9,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional
 
-
 from config import settings
 from services.rewrite import _call_llm
 

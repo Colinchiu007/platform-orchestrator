@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
-from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient

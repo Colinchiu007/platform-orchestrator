@@ -19,7 +19,6 @@ from fastapi import HTTPException
 
 from middleware.feature_gate import get_feature_gates, requires_feature
 
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 

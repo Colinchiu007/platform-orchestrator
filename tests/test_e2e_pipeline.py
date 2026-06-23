@@ -6,21 +6,16 @@ Background pipeline tasks are suppressed to isolate endpoint behaviour.
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
-from db import init_db
-from middleware.rate_limit import reset_rate_limits
-
 # DB init is handled by conftest.py session fixture — no module-level asyncio.run()
 # Rate-limit bypass is handled by conftest.py session fixture
-
 from main import app  # noqa: E402 — conftest handles monkeypatch before this import
-
+from middleware.rate_limit import reset_rate_limits
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 

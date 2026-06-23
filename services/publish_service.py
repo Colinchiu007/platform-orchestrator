@@ -17,7 +17,7 @@ _MP_BACKEND = Path("/srv/projects/Multi-Publish/packages/python-backend/src")
 if str(_MP_BACKEND) not in sys.path:
     sys.path.insert(0, str(_MP_BACKEND))
 
-from wechat_publisher import WechatPublisher, Article, PublishResult  # noqa: E402
+from wechat_publisher import Article, PublishResult, WechatPublisher  # noqa: E402
 
 
 @dataclass

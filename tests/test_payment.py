@@ -11,9 +11,7 @@ import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
-from jose import jwt
 
-from config import settings
 from db import init_db
 from middleware.rate_limit import reset_rate_limits
 

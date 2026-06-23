@@ -12,12 +12,10 @@ import pytest
 
 from services.video_service import (
     VideoProvider,
-    VideoResult,
     VideoStatus,
     _retry_with_backoff,
     query_video_status,
 )
-
 
 # ── _retry_with_backoff tests ────────────────────────────────────────────────
 

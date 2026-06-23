@@ -3,7 +3,6 @@
 RED phase — write failing tests first, then implement.
 """
 
-import re
 
 import pytest
 

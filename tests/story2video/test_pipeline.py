@@ -8,13 +8,11 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import ANY, AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from services.story2video.pipeline import PipelineResult, run_story2video_pipeline
-from services.story2video.text_segmentation import Scene
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

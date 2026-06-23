@@ -6,19 +6,17 @@ Background pipeline tasks are suppressed to isolate endpoint behaviour.
 
 from __future__ import annotations
 
-import json
+# Initialize DB once at module level (idempotent)
+import asyncio
 import sqlite3
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
-from config import settings
 from db import init_db
 from middleware.rate_limit import reset_rate_limits
 
-# Initialize DB once at module level (idempotent)
-import asyncio
 asyncio.run(init_db())
 
 # ── Monkeypatch rate_limit_video BEFORE routers import it ────────────────
@@ -26,10 +24,10 @@ asyncio.run(init_db())
 # when the function has no `key` parameter. We provide a no-arg lambda
 # so all video-route tests bypass rate-limit evaluation.
 import middleware.rate_limit as _rl_mod
+
 _rl_mod.rate_limit_video = lambda: "1000/hour"
 
 from main import app  # noqa: E402 — must run after monkeypatch
-
 
 TEST_USER = {"username": "videopipe_user", "email": "videopipe@example.com", "password": "testpass123"}
 

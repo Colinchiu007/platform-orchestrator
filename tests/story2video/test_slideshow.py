@@ -9,7 +9,6 @@ import pytest
 
 from services.story2video.slideshow import create_slideshow
 
-
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
 
