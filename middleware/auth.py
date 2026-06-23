@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
@@ -36,7 +36,8 @@ def create_access_token(
 def decode_token(token: str) -> Dict[str, Any]:
     """Decode and validate a JWT token. Raises HTTPException on failure."""
     try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
+        algorithms = [settings.jwt_algorithm]
+        payload = jwt.decode(token, settings.secret_key, algorithms=algorithms)
         return payload
     except JWTError as e:
         raise HTTPException(
@@ -47,10 +48,13 @@ def decode_token(token: str) -> Dict[str, Any]:
 
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    request: Request = None,
 ) -> Dict[str, Any]:
     """FastAPI dependency: extracts user from Bearer token.
 
-    Returns user dict with keys: sub, username, tier, exp, iat
+    Returns user dict with keys: sub, username, tier, exp, iat.
+    Sets request.state.user for rate-limit key function.
+
     Raises 401 if no valid token provided.
     """
     if credentials is None:
@@ -65,4 +69,7 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token missing 'sub' claim",
         )
+    # Expose user payload on request.state for rate-limit keying
+    if request:
+        request.state.user = payload
     return payload

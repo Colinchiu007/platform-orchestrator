@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader
 
 from db import get_db
-from middleware.auth import get_current_user, decode_token
+from middleware.auth import decode_token
 
 router = APIRouter()
 _env = Environment(loader=FileSystemLoader("templates"), auto_reload=True)
@@ -59,12 +59,22 @@ async def dashboard(request: Request, db=Depends(get_db)):
     if isinstance(user, RedirectResponse):
         return user
 
-    async with db.execute("SELECT COUNT(*) as c FROM articles WHERE user_id = ?", (user["sub"],)) as c:
-        r = await c.fetchone(); article_count = r["c"] if r else 0
-    async with db.execute("SELECT COUNT(*) as c FROM jobs WHERE user_id = ? AND job_type='video'", (user["sub"],)) as c:
-        r = await c.fetchone(); video_count = r["c"] if r else 0
-    async with db.execute("SELECT COUNT(*) as c FROM jobs WHERE user_id = ? AND job_type='publish'", (user["sub"],)) as c:
-        r = await c.fetchone(); publish_count = r["c"] if r else 0
+    sql_articles = "SELECT COUNT(*) as c FROM articles WHERE user_id = ?"
+    sql_video = "SELECT COUNT(*) as c FROM jobs WHERE user_id = ? AND job_type='video'"
+    sql_publish = (
+        "SELECT COUNT(*) as c FROM jobs "
+        "WHERE user_id = ? AND job_type='publish'"
+    )
+
+    async with db.execute(sql_articles, (user["sub"],)) as c:
+        r = await c.fetchone()
+        article_count = r["c"] if r else 0
+    async with db.execute(sql_video, (user["sub"],)) as c:
+        r = await c.fetchone()
+        video_count = r["c"] if r else 0
+    async with db.execute(sql_publish, (user["sub"],)) as c:
+        r = await c.fetchone()
+        publish_count = r["c"] if r else 0
 
     return _page("dashboard.html", user=user, stats={
         "articles": article_count, "videos": video_count, "publishes": publish_count,

@@ -80,4 +80,38 @@ async def init_db() -> None:
                 updated_at TEXT DEFAULT (datetime('now'))
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS refresh_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token_jti TEXT UNIQUE NOT NULL,
+                user_uuid TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                revoked INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_uuid TEXT UNIQUE NOT NULL,
+                plan_type TEXT NOT NULL DEFAULT 'free',
+                status TEXT DEFAULT 'active',
+                start_date TEXT,
+                end_date TEXT,
+                auto_renew INTEGER DEFAULT 0
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS payments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                checkout_id TEXT UNIQUE NOT NULL,
+                user_uuid TEXT NOT NULL,
+                plan_type TEXT NOT NULL,
+                amount_cents INTEGER NOT NULL,
+                currency TEXT NOT NULL DEFAULT 'usd',
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
         await db.commit()

@@ -6,6 +6,7 @@ jimeng-create-video, vidu-create-video + query counterparts.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -129,6 +130,117 @@ async def _generate_jimeng(req: GenerateVideoRequest) -> VideoResult:
     )
 
 
+# ── Retry Helper ─────────────────────────────────────────────────────────────
+
+
+async def _retry_with_backoff(func, max_retries: int = 3):
+    """Retry an async function with exponential backoff on HTTP/connect errors.
+
+    Retries on httpx.HTTPStatusError and httpx.ConnectError.
+    Non-HTTP errors propagate immediately.
+    Backoff delays: 1s, 2s, 4s (2^(attempt-1)).
+    max_retries is total attempts, including the first.
+    """
+    last_exception: Exception | None = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            return await func()
+        except (httpx.HTTPStatusError, httpx.ConnectError) as exc:
+            last_exception = exc
+            if attempt < max_retries:
+                await asyncio.sleep(2 ** (attempt - 1))
+        except Exception:
+            raise
+    raise last_exception  # type: ignore[misc]
+
+
+# ── Provider-specific Query Functions ────────────────────────────────────────
+
+
+async def _query_kling_status(task_id: str, api_key: str) -> VideoResult:
+    """Query Kling video generation status."""
+    url = f"https://api.kling.kuaishou.com/v1/videos/text2video/{task_id}"
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            url,
+            headers={"Authorization": f"Bearer {api_key}"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    task_status = data.get("data", {}).get("task_status", "")
+
+    if task_status == "submitted":
+        return VideoResult(
+            provider=VideoProvider.KLING, status=VideoStatus.PENDING,
+            task_id=task_id, progress=10,
+        )
+    elif task_status == "processing":
+        return VideoResult(
+            provider=VideoProvider.KLING, status=VideoStatus.PROCESSING,
+            task_id=task_id, progress=50,
+        )
+    elif task_status == "succeed":
+        videos = data.get("data", {}).get("videos", [])
+        video_url = videos[0].get("url", "") if videos else ""
+        return VideoResult(
+            provider=VideoProvider.KLING, status=VideoStatus.COMPLETED,
+            task_id=task_id, video_url=video_url, progress=100,
+        )
+    elif task_status == "failed":
+        return VideoResult(
+            provider=VideoProvider.KLING, status=VideoStatus.FAILED,
+            task_id=task_id,
+        )
+    else:
+        return VideoResult(
+            provider=VideoProvider.KLING, status=VideoStatus.FAILED,
+            task_id=task_id, error=f"Unknown status: {task_status}",
+        )
+
+
+async def _query_jimeng_status(task_id: str, api_key: str) -> VideoResult:
+    """Query Jimeng video generation status."""
+    url = f"https://ark.cn-beijing.volces.com/api/v3/imaginations/generations/{task_id}"
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            url,
+            headers={"Authorization": f"Bearer {api_key}"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    status = data.get("status", "")
+
+    if status == "pending":
+        return VideoResult(
+            provider=VideoProvider.JIMENG, status=VideoStatus.PENDING,
+            task_id=task_id,
+        )
+    elif status == "processing":
+        return VideoResult(
+            provider=VideoProvider.JIMENG, status=VideoStatus.PROCESSING,
+            task_id=task_id,
+        )
+    elif status == "completed":
+        results = data.get("results", [])
+        video_url = results[0].get("url", "") if results else ""
+        return VideoResult(
+            provider=VideoProvider.JIMENG, status=VideoStatus.COMPLETED,
+            task_id=task_id, video_url=video_url, progress=100,
+        )
+    elif status == "failed":
+        return VideoResult(
+            provider=VideoProvider.JIMENG, status=VideoStatus.FAILED,
+            task_id=task_id,
+        )
+    else:
+        return VideoResult(
+            provider=VideoProvider.JIMENG, status=VideoStatus.FAILED,
+            task_id=task_id, error=f"Unknown status: {status}",
+        )
+
+
 # ── Query Functions ─────────────────────────────────────────────────────────
 
 
@@ -138,11 +250,42 @@ async def query_video_status(
     api_key: Optional[str] = None,
 ) -> VideoResult:
     """Query the status of an async video generation task."""
-    # Placeholder — actual implementation depends on provider-specific query APIs
-    return VideoResult(
-        provider=provider, status=VideoStatus.PROCESSING,
-        task_id=task_id, progress=50,
-    )
+    # Resolve API key from parameter or config
+    resolved_key: str | None = api_key
+    if resolved_key is None:
+        if provider == VideoProvider.KLING:
+            resolved_key = settings.kling_api_key
+        elif provider == VideoProvider.JIMENG:
+            resolved_key = settings.jimeng_api_key
+
+    if not resolved_key:
+        return VideoResult(
+            provider=provider, status=VideoStatus.FAILED,
+            task_id=task_id, error="No API key provided",
+        )
+
+    # Dispatch to provider-specific query with retry
+    try:
+        if provider == VideoProvider.KLING:
+            return await _retry_with_backoff(
+                lambda: _query_kling_status(task_id, resolved_key),  # type: ignore[arg-type]
+                max_retries=3,
+            )
+        elif provider == VideoProvider.JIMENG:
+            return await _retry_with_backoff(
+                lambda: _query_jimeng_status(task_id, resolved_key),  # type: ignore[arg-type]
+                max_retries=3,
+            )
+        else:
+            return VideoResult(
+                provider=provider, status=VideoStatus.FAILED,
+                task_id=task_id, error=f"Unsupported provider: {provider}",
+            )
+    except Exception as exc:
+        return VideoResult(
+            provider=provider, status=VideoStatus.FAILED,
+            task_id=task_id, error=str(exc),
+        )
 
 
 # ── Public API ──────────────────────────────────────────────────────────────

@@ -10,14 +10,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from config import settings
+
 # Add Multi-Publish backend to Python path
 _MP_BACKEND = Path("/srv/projects/Multi-Publish/packages/python-backend/src")
 if str(_MP_BACKEND) not in sys.path:
     sys.path.insert(0, str(_MP_BACKEND))
 
 from wechat_publisher import WechatPublisher, Article, PublishResult  # noqa: E402
-
-from config import settings
 
 
 @dataclass

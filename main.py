@@ -14,7 +14,8 @@ from fastapi.staticfiles import StaticFiles
 
 from config import settings
 from db import init_db
-from routers import aggregator, auth, prompt, publish, splitter, video, web
+from middleware.rate_limit import setup_rate_limiting
+from routers import aggregator, auth, payment, prompt, publish, splitter, video, web
 
 
 @asynccontextmanager
@@ -40,6 +41,9 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Rate limiting (slowapi)
+    setup_rate_limiting(app)
+
     # Health check
     @app.get("/health")
     async def health():
@@ -60,6 +64,7 @@ def create_app() -> FastAPI:
 
     # Register module routers
     app.include_router(auth.router)
+    app.include_router(payment.router)
     app.include_router(aggregator.router, prefix="/api/articles", tags=["articles"])
     app.include_router(splitter.router, prefix="/api/articles", tags=["splitter"])
     app.include_router(prompt.router, prefix="/api/prompts", tags=["prompts"])

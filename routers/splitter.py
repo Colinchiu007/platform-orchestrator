@@ -12,13 +12,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from db import get_db
 from middleware.auth import get_current_user
 from middleware.feature_gate import requires_feature
+from splitter import SmartSentenceSplitter
+
 from shared_models import SplitResult
 
 router = APIRouter()
 
 # Module-level instance — initialized once, reused across requests (stateless)
-from splitter import SmartSentenceSplitter
-
 _splitter = SmartSentenceSplitter({"mode": "balanced"})
 
 
@@ -35,10 +35,11 @@ async def split_article(
     Returns SplitResult with sentences[], scenes[], subtitles[].
     """
     # Fetch article from DB
-    async with db.execute(
-        "SELECT source_content, result_content FROM articles WHERE id = ? AND user_id = ?",
-        (article_id, current_user["sub"]),
-    ) as cursor:
+    sql = (
+        "SELECT source_content, result_content "
+        "FROM articles WHERE id = ? AND user_id = ?"
+    )
+    async with db.execute(sql, (article_id, current_user["sub"]),) as cursor:
         row = await cursor.fetchone()
 
     if not row:
@@ -55,9 +56,14 @@ async def split_article(
     # Store result in DB as JSON
     import json
 
+    sql = (
+        "INSERT OR REPLACE INTO splits "
+        "(article_id, result_json, tier_used, "
+        "total_scenes, total_duration, created_at) "
+        "VALUES (?, ?, ?, ?, ?, datetime('now'))"
+    )
     await db.execute(
-        """INSERT OR REPLACE INTO splits (article_id, result_json, tier_used, total_scenes, total_duration, created_at)
-           VALUES (?, ?, ?, ?, ?, datetime('now'))""",
+        sql,
         (
             article_id,
             json.dumps(result.to_dict(), ensure_ascii=False),
@@ -114,10 +120,11 @@ async def get_split_result(
     db=Depends(get_db),
 ):
     """Retrieve existing split result from database."""
-    async with db.execute(
-        "SELECT result_json, tier_used, total_scenes, total_duration FROM splits WHERE article_id = ?",
-        (article_id,),
-    ) as cursor:
+    sql = (
+        "SELECT result_json, tier_used, total_scenes, total_duration "
+        "FROM splits WHERE article_id = ?"
+    )
+    async with db.execute(sql, (article_id,),) as cursor:
         row = await cursor.fetchone()
 
     if not row:

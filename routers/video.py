@@ -11,15 +11,16 @@ Endpoints:
 from __future__ import annotations
 
 import json
+import os
 import uuid
-from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from db import get_db
 from middleware.auth import get_current_user
 from middleware.feature_gate import requires_feature
+from middleware.rate_limit import limiter, rate_limit_video
 
 router = APIRouter()
 
@@ -32,9 +33,15 @@ class CreateVideoRequest(BaseModel):
     image_provider: str = Field(default="minimax", description="Image gen provider")
 
 
+class CreateStory2VideoRequest(BaseModel):
+    article_id: str = Field(..., description="Article ID to generate story2video from")
+
+
 @router.post("/video")
 @requires_feature("video_fixed_template")
+@limiter.limit(rate_limit_video)
 async def create_video_job(
+    request: Request,
     body: CreateVideoRequest,
     background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
@@ -46,10 +53,11 @@ async def create_video_job(
     Poll GET /api/jobs/video/{job_id} for progress.
     """
     # Verify article exists and has split result
-    async with db.execute(
-        "SELECT id, result_content, source_content FROM articles WHERE id = ? AND user_id = ?",
-        (body.article_id, current_user["sub"]),
-    ) as cursor:
+    sql = (
+        "SELECT id, result_content, source_content "
+        "FROM articles WHERE id = ? AND user_id = ?"
+    )
+    async with db.execute(sql, (body.article_id, current_user["sub"]),) as cursor:
         article = await cursor.fetchone()
 
     if not article:
@@ -62,7 +70,13 @@ async def create_video_job(
         split_row = await cursor.fetchone()
 
     if not split_row:
-        raise HTTPException(status_code=400, detail="Article has not been split yet. POST /api/articles/{id}/split first.")
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Article has not been split yet. "
+                "POST /api/articles/{id}/split first."
+            )
+        )
 
     job_id = str(uuid.uuid4())
 
@@ -92,7 +106,10 @@ async def create_video_job(
     return {
         "job_id": job_id,
         "status": "queued",
-        "message": "Video generation started. Poll GET /api/jobs/video/{job_id} for progress.",
+        "message": (
+            "Video generation started. "
+            "Poll GET /api/jobs/video/{job_id} for progress."
+        ),
     }
 
 
@@ -143,6 +160,71 @@ async def list_video_jobs(
     return {"items": [dict(r) for r in rows], "page": page, "page_size": page_size}
 
 
+# ── Story2Video Pipeline Endpoint ──────────────────────────────────────────
+
+
+@router.post("/story2video")
+@requires_feature("video_fixed_template")
+async def create_story2video_job(
+    request: Request,
+    body: CreateStory2VideoRequest,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Create a story2video generation job.
+
+    Uses the fixed-template pipeline (text → segmentation → TTS → audio mix
+    → image gen → slideshow → composite). Runs via BackgroundTasks.
+    """
+    # Verify article exists and belongs to user
+    sql = (
+        "SELECT id, result_content, source_content "
+        "FROM articles WHERE id = ? AND user_id = ?"
+    )
+    async with db.execute(sql, (body.article_id, current_user["sub"]),) as cursor:
+        article = await cursor.fetchone()
+
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    # Use result_content (LLM rewrite) if available, otherwise source
+    article_text = article["result_content"] or article["source_content"] or ""
+    if not article_text.strip():
+        raise HTTPException(status_code=400, detail="Article has no content")
+
+    job_id = str(uuid.uuid4())
+
+    await db.execute(
+        """INSERT INTO jobs (id, user_id, job_type, status, input_data)
+           VALUES (?, ?, 'story2video', 'queued', ?)""",
+        (job_id, current_user["sub"], json.dumps({
+            "article_id": body.article_id,
+        })),
+    )
+    await db.commit()
+
+    # Launch async pipeline
+    output_dir = f"output/story2video/{job_id}"
+    os.makedirs(output_dir, exist_ok=True)
+
+    background_tasks.add_task(
+        _run_story2video_background,
+        job_id=job_id,
+        article_text=article_text,
+        output_dir=output_dir,
+    )
+
+    return {
+        "job_id": job_id,
+        "status": "queued",
+        "message": (
+            "Story2Video job created. "
+            "Poll GET /api/jobs/video/{job_id} for progress."
+        ),
+    }
+
+
 # ── Background Pipeline ─────────────────────────────────────────────────────
 
 
@@ -159,16 +241,17 @@ async def _run_video_pipeline(
     import aiosqlite
     from services.tts_service import text_to_speech
     from services.prompt_service import optimize_prompts_batch
-    from services.image_service import generate_images_batch, GenerateImageRequest, ImageProvider
+    from services.image_service import generate_images_batch, ImageProvider
     from services.compositor import compose_video, CompositorInput, SubtitleSegment
 
     async def _update(status: str, output: dict = None, error: str = None):
         db = await aiosqlite.connect("orchestrator.db")
         await db.execute("PRAGMA journal_mode=WAL;")
-        await db.execute(
-            "UPDATE jobs SET status = ?, output_data = ?, error = ?, updated_at = datetime('now') WHERE id = ?",
-            (status, json.dumps(output or {}), error, job_id),
+        sql = (
+            "UPDATE jobs SET status = ?, output_data = ?, error = ?, "
+            "updated_at = datetime('now') WHERE id = ?"
         )
+        await db.execute(sql, (status, json.dumps(output or {}), error, job_id),)
         await db.commit()
         await db.close()
 
@@ -196,12 +279,19 @@ async def _run_video_pipeline(
             [{"text": t} for t in scene_texts]
         )
 
-        optimized_prompts = prompt_result.prompts if not prompt_result.error else scene_texts
+        optimized_prompts = (
+            prompt_result.prompts if not prompt_result.error else scene_texts
+        )
         if len(optimized_prompts) < len(scene_texts):
             optimized_prompts += scene_texts[len(optimized_prompts):]
 
         # ── 3. Image generation ─────────────────────────────────────────
-        provider = ImageProvider(image_provider) if image_provider in [p.value for p in ImageProvider] else ImageProvider.MINIMAX
+        valid_providers = [p.value for p in ImageProvider]
+        provider = (
+            ImageProvider(image_provider)
+            if image_provider in valid_providers
+            else ImageProvider.MINIMAX
+        )
 
         image_results = await generate_images_batch(
             prompts=optimized_prompts,
@@ -213,7 +303,9 @@ async def _run_video_pipeline(
             await _update("failed", error="All image generations failed")
             return
 
-        await _update("compositing", {"progress": 0.7, "images_generated": len(image_paths)})
+        await _update("compositing", {
+            "progress": 0.7, "images_generated": len(image_paths),
+        })
 
         # ── 4. Build subtitle segments from split result ────────────────
         subtitle_segments = []
@@ -238,7 +330,9 @@ async def _run_video_pipeline(
         ))
 
         if not composit_result.success:
-            await _update("failed", error=f"Compositing failed: {composit_result.error}")
+            await _update(
+                "failed", error=f"Compositing failed: {composit_result.error}"
+            )
             return
 
         await _update("done", {
@@ -247,6 +341,53 @@ async def _run_video_pipeline(
             "duration": composit_result.duration_seconds,
             "scenes": len(scenes),
             "images_generated": len(image_paths),
+        })
+
+    except Exception as e:
+        await _update("failed", error=str(e))
+
+
+# ── Story2Video Background Task ─────────────────────────────────────────────
+
+
+async def _run_story2video_background(
+    job_id: str,
+    article_text: str,
+    output_dir: str,
+):
+    """Background task: run the fixed-template Story2Video pipeline."""
+    import aiosqlite
+    from services.story2video.pipeline import run_story2video_pipeline
+
+    async def _update(status: str, output: dict = None, error: str = None):
+        db = await aiosqlite.connect("orchestrator.db")
+        await db.execute("PRAGMA journal_mode=WAL;")
+        sql = (
+            "UPDATE jobs SET status = ?, output_data = ?, error = ?, "
+            "updated_at = datetime('now') WHERE id = ?"
+        )
+        await db.execute(sql, (status, json.dumps(output or {}), error, job_id),)
+        await db.commit()
+        await db.close()
+
+    try:
+        await _update("processing", {"progress": 0.0})
+
+        result = await run_story2video_pipeline(
+            article_text=article_text,
+            output_dir=output_dir,
+        )
+
+        if not result.success:
+            await _update("failed", error=result.error or "Pipeline failed")
+            return
+
+        await _update("done", {
+            "progress": 1.0,
+            "output_path": result.output_path,
+            "scenes": result.scenes,
+            "images_generated": result.images_generated,
+            "duration_seconds": result.duration_seconds,
         })
 
     except Exception as e:

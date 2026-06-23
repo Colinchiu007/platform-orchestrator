@@ -25,7 +25,9 @@ router = APIRouter()
 class PublishRequest(BaseModel):
     article_id: str = Field(..., description="Article ID to publish")
     platforms: list[str] = Field(default=["wechat_mp"], description="Target platforms")
-    cover_image_path: Optional[str] = Field(default=None, description="Cover image path")
+    cover_image_path: Optional[str] = Field(
+        default=None, description="Cover image path"
+    )
 
 
 @router.post("/publish")
@@ -38,10 +40,11 @@ async def create_publish_task(
 ):
     """Create a publish task for the article."""
     # Get article content
-    async with db.execute(
-        "SELECT id, result_content, source_content, source_url FROM articles WHERE id = ? AND user_id = ?",
-        (body.article_id, current_user["sub"]),
-    ) as cursor:
+    sql = (
+        "SELECT id, result_content, source_content, source_url "
+        "FROM articles WHERE id = ? AND user_id = ?"
+    )
+    async with db.execute(sql, (body.article_id, current_user["sub"]),) as cursor:
         article = await cursor.fetchone()
 
     if not article:
@@ -141,10 +144,11 @@ async def _publish_wechat(
     async def _update(status: str, output: dict = None, error: str = None):
         db = await aiosqlite.connect("orchestrator.db")
         await db.execute("PRAGMA journal_mode=WAL;")
-        await db.execute(
-            "UPDATE jobs SET status = ?, output_data = ?, error = ?, updated_at = datetime('now') WHERE id = ?",
-            (status, json.dumps(output or {}), error, task_id),
+        sql = (
+            "UPDATE jobs SET status = ?, output_data = ?, error = ?, "
+            "updated_at = datetime('now') WHERE id = ?"
         )
+        await db.execute(sql, (status, json.dumps(output or {}), error, task_id),)
         await db.commit()
         await db.close()
 

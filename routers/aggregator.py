@@ -18,7 +18,6 @@ from db import get_db
 from middleware.auth import get_current_user
 from middleware.feature_gate import requires_feature
 from services.collect import collect_url
-from services.rewrite import STYLE_PROMPTS, LENGTH_INSTRUCTIONS
 
 router = APIRouter()
 
@@ -54,7 +53,10 @@ async def fetch_article(
         """INSERT INTO articles (id, user_id, source_type, source_url, source_content,
            word_count_original, status)
            VALUES (?, ?, 'url', ?, ?, ?, 'draft')""",
-        (article_id, current_user["sub"], body.url, collected.content, collected.word_count),
+        (
+            article_id, current_user["sub"], body.url,
+            collected.content, collected.word_count,
+        ),
     )
     await db.commit()
 
