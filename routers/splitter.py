@@ -14,8 +14,6 @@ from middleware.auth import get_current_user
 from middleware.feature_gate import requires_feature
 from splitter import SmartSentenceSplitter
 
-from shared_models import SplitResult
-
 router = APIRouter()
 
 # Module-level instance — initialized once, reused across requests (stateless)
@@ -50,8 +48,8 @@ async def split_article(
     if not text.strip():
         raise HTTPException(status_code=400, detail="Article has no content to split")
 
-    # Call splitter
-    result: SplitResult = _splitter.split(text)
+    # Call splitter (returns splitter.models.result.SplitResult dataclass)
+    result = _splitter.split(text)
 
     # Store result in DB as JSON
     import json

@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from config import settings
 from db import init_db
 from middleware.rate_limit import setup_rate_limiting
-from routers import aggregator, auth, payment, prompt, publish, splitter, video, web
+from routers import aggregator, auth, payment, prompt, publish, splitter, trending, video, web
 
 
 @asynccontextmanager
@@ -70,6 +70,7 @@ def create_app() -> FastAPI:
     app.include_router(prompt.router, prefix="/api/prompts", tags=["prompts"])
     app.include_router(video.router, prefix="/api/jobs", tags=["video"])
     app.include_router(publish.router, prefix="/api/jobs", tags=["publish"])
+    app.include_router(trending.router, prefix="/api/trending", tags=["trending"])
 
     return app
 

@@ -30,6 +30,9 @@ dev = [
 target-version = "py311"
 line-length = 100
 
+[tool.setuptools.packages.find]
+include = ["main*", "config*", "db*", "routers*", "services*", "middleware*"]
+
 [tool.ruff.lint]
 select = ["F", "E", "W", "I"]
 

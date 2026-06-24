@@ -42,7 +42,9 @@ class Settings(BaseSettings):
     wechat_appsecret: str = ""
 
     # ── Feature Gates ───────────────────────────────────────────────────
-    feature_gates_path: str = "/srv/projects/feature_gates.yaml"
+    # Development default points to workspace root; override via
+    # PO_FEATURE_GATES_PATH for production (/srv/projects/feature_gates.yaml)
+    feature_gates_path: str = "D:/Data/projects/feature_gates.yaml"
 
     # ── CORS ────────────────────────────────────────────────────────────
     cors_origins: list[str] = [

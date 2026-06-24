@@ -2,6 +2,10 @@
 
 Replaces the optimize-prompt Edge Function.
 Reuses the same _call_llm pattern from services/rewrite.py.
+
+When prompt-engine is installed (``pip install -e D:/Data/projects/prompt-engine``),
+this service delegates to its platform-specific Optimizer for higher-quality results;
+otherwise it falls back to the built-in generic LLM call.
 """
 
 from __future__ import annotations
@@ -11,6 +15,14 @@ from typing import List, Optional
 
 from config import settings
 from services.rewrite import _call_llm
+
+# ── Optional prompt-engine import ────────────────────────────────────────────
+try:
+    from prompt_engine import Optimizer
+    _HAS_PROMPT_ENGINE = True
+except ImportError:  # pragma: no cover
+    Optimizer = None
+    _HAS_PROMPT_ENGINE = False
 
 # ── Default System Prompt ───────────────────────────────────────────────────
 
@@ -66,6 +78,17 @@ async def optimize_prompt(
 
     if not key:
         return OptimizePromptResult(prompts=[], error="No LLM API key configured")
+
+    # ── Try prompt-engine's platform-specific optimizer first ────────────
+    if _HAS_PROMPT_ENGINE:
+        try:
+            optim = Optimizer()
+            result = optim.optimize(text, segments=segments)
+            if result and result.prompts:
+                return OptimizePromptResult(prompts=result.prompts)
+        except Exception:
+            # Fall back to generic LLM call below
+            pass
 
     sys_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
 

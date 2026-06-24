@@ -3,6 +3,9 @@ __pycache__/
 *.pyc
 *.pyo
 
+# Editable install artifacts
+*.egg-info/
+
 # Database
 orchestrator.db
 orchestrator.db-shm
