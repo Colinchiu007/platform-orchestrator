@@ -6,6 +6,7 @@ Example: PO_SECRET_KEY=my-secret PO_DEBUG=true
 
 from __future__ import annotations
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -16,7 +17,7 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # ── Auth ────────────────────────────────────────────────────────────
-    secret_key: str = "change-me-in-production-use-env-var"
+    secret_key: str = ""  # must set PO_SECRET_KEY in environment
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 30
@@ -53,7 +54,4 @@ class Settings(BaseSettings):
         "http://127.0.0.1:8000",
     ]
 
-    model_config = {"env_prefix": "PO_", "extra": "allow"}
-
-
-settings = Settings()
+    model_config = {"env_prefix": "PO_",
