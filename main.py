@@ -17,7 +17,7 @@ from config import settings
 from db import init_db
 from db_pg import init_pg_db
 from middleware.rate_limit import setup_rate_limiting
-from routers import aggregator, auth, payment, prompt, publish, splitter, trending, video, web
+from routers import aggregator, auth, dashboard, payment, prompt, publish, splitter, trending, video, web
 
 
 @asynccontextmanager
@@ -65,8 +65,4 @@ def create_app() -> FastAPI:
     app.include_router(video.router, prefix="/api/jobs", tags=["video"])
     app.include_router(publish.router, prefix="/api/jobs", tags=["publish"])
     app.include_router(trending.router, prefix="/api/trending", tags=["trending"])
-
-    return app
-
-
-app = create_app()
+    app.include_router(das
