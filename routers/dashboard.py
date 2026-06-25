@@ -9,11 +9,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from db import get_db
+from db import DB_PATH, get_db
 from middleware.auth import get_current_user
+from services.pipeline import run_pipeline
 
 router = APIRouter(prefix="/api/v1/aggregator", tags=["aggregator"])
 
@@ -133,12 +134,15 @@ async def get_generate_options(
 @router.post("/generate")
 async def generate_pipeline(
     body: GenerateRequest,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db),
 ):
     """Submit one-step generate pipeline: split → prompt → video.
 
-    Returns job_id; frontend polls /api/jobs/{id} for status.
+    Dispatches via BackgroundTasks; frontend polls /api/jobs/{id}
+    for status progression: splitting → optimizing → tts →
+    imaging → composing → done.
     """
     # 1. Fetch article
     async with db.execute(
@@ -152,17 +156,15 @@ async def generate_pipeline(
     content = article["result_content"] or article["source_content"]
 
     # 2. Create job record
+    import json
     import uuid
     job_id = str(uuid.uuid4())
+    input_data = json.dumps({
+        "article_id": body.article_id,
+        "voice": body.voice,
+        "video_ratio": body.video_ratio,
+        "prompt_platform": body.prompt_platform,
+    })
     await db.execute(
-        """INSERT INTO jobs (id, user_id, job_type, status, source_article_id,
-           voice, video_ratio, prompt_platform, created_at)
-           VALUES (?, ?, 'video', 'pending', ?, ?, ?, ?, datetime('now'))""",
-        (job_id, current_user["sub"], body.article_id,
-         body.voice, body.video_ratio, body.prompt_platform),
-    )
-    await db.commit()
-
-    # 3. TODO: dispatch actual pipeline (BackgroundTask + Celery).
-    # Currently returns pending; frontend polls /api/jobs/{id}.
-    return {"job_id": job_id, "status": "pending"}
+        """INSERT INTO jobs (id, user_id, job_type, status, input_data, created_at)
+           VALUES (?, ?, 'video', 'pe
