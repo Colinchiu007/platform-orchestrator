@@ -2,6 +2,7 @@
 
 Routes are registered via routers/ modules. Middleware handles
 JWT authentication and feature-gate enforcement.
+Phase B: init_pg_db added for PostgreSQL auth tables.
 """
 
 from __future__ import annotations
@@ -14,14 +15,16 @@ from fastapi.staticfiles import StaticFiles
 
 from config import settings
 from db import init_db
+from db_pg import init_pg_db
 from middleware.rate_limit import setup_rate_limiting
 from routers import aggregator, auth, payment, prompt, publish, splitter, trending, video, web
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize database on startup."""
+    """Initialize databases on startup."""
     await init_db()
+    await init_pg_db()
     yield
 
 
@@ -32,7 +35,6 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # CORS
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -41,28 +43,20 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Rate limiting (slowapi)
     setup_rate_limiting(app)
 
-    # Health check
     @app.get("/health")
     async def health():
         return {"status": "ok", "version": settings.app_version}
 
-    # Feature gates (public endpoint)
     @app.get("/api/features")
     async def list_features():
         from middleware.feature_gate import load_feature_gates
         gates = load_feature_gates()
         return {"features": gates}
 
-    # Static files
     app.mount("/static", StaticFiles(directory="static"), name="static")
-
-    # Web frontend (Jinja2 templates + HTMX)
     app.include_router(web.router)
-
-    # Register module routers
     app.include_router(auth.router)
     app.include_router(payment.router)
     app.include_router(aggregator.router, prefix="/api/articles", tags=["articles"])

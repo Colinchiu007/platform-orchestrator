@@ -2,6 +2,9 @@
 
 All values can be overridden via environment variables prefixed with PO_.
 Example: PO_SECRET_KEY=my-secret PO_DEBUG=true
+
+Phase B: PostgreSQL support added — defaults to PG shared with trendscope,
+falls back to SQLite for local development with aiosqlite.
 """
 
 from __future__ import annotations
@@ -13,7 +16,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # ── App ─────────────────────────────────────────────────────────────
     app_name: str = "platform-orchestrator"
-    app_version: str = "0.2.0"
+    app_version: str = "0.3.0"
     debug: bool = False
 
     # ── Auth ────────────────────────────────────────────────────────────
@@ -22,8 +25,12 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 30
 
-    # ── Database ────────────────────────────────────────────────────────
-    database_url: str = "orchestrator.db"
+    # ── Database (Phase B: PostgreSQL primary, SQLite fallback) ─────────
+    database_url: str = (
+        "postgresql+asyncpg://trendscope:trendscope_dev@localhost:5432/tendscope"
+    )
+    # Schema for auth tables within the shared PG instance
+    db_auth_schema: str = "auth"
 
     # ── LLM / AI ────────────────────────────────────────────────────────
     openai_api_key: str = ""
@@ -43,8 +50,6 @@ class Settings(BaseSettings):
     wechat_appsecret: str = ""
 
     # ── Feature Gates ───────────────────────────────────────────────────
-    # Development default points to workspace root; override via
-    # PO_FEATURE_GATES_PATH for production (/srv/projects/feature_gates.yaml)
     feature_gates_path: str = "D:/Data/projects/feature_gates.yaml"
 
     # ── CORS ────────────────────────────────────────────────────────────
@@ -54,4 +59,16 @@ class Settings(BaseSettings):
         "http://127.0.0.1:8000",
     ]
 
-    model_config = {"env_prefix": "PO_",
+    model_config = {"env_prefix": "PO_", "extra": "allow"}
+
+    @model_validator(mode="after")
+    def _validate_secret_key(self):
+        if not self.secret_key:
+            raise ValueError(
+                "PO_SECRET_KEY environment variable is not set. "
+                "Set a strong random key before starting the server."
+            )
+        return self
+
+
+settings = Settings()
