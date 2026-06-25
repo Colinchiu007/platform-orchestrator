@@ -6,20 +6,17 @@ Phase 1 (content pipeline):
 
 Phase 2 (Story2Video):
 - tts_service.py: Doubao TTS + voice cloning
-- prompt_service.py: Scene-to-prompt optimization (LLM)
+- prompt_service.py: Scene-to-prompt optimization (LLM, moved to prompt-engine)
 - image_service.py: Multi-provider image generation
 - video_service.py: Multi-provider video generation
-- compositor.py: FFmpeg video compositing (Canvas replacement)
+- concurrency_control.py: Video task concurrency limiter
+
+Phase 3 (extracted):
+- compositor: Moved to standalone `video-compositor` package
+  (from video_compositor import compose_video, ...)
 """
 
 from services.collect import CollectResult, collect_url
-from services.compositor import (
-    CompositorInput,
-    CompositorResult,
-    SubtitleSegment,
-    compose_from_pipeline,
-    compose_video,
-)
 from services.image_service import (
     GenerateImageRequest,
     ImageProvider,
@@ -28,7 +25,7 @@ from services.image_service import (
     generate_image,
     generate_images_batch,
 )
-from services.prompt_service import OptimizePromptResult, optimize_prompt, optimize_prompts_batch
+from prompt_engine.services import OptimizePromptResult, optimize_prompt, optimize_prompts_batch
 from services.rewrite import LENGTH_INSTRUCTIONS, STYLE_PROMPTS, RewriteResult, rewrite_content
 from services.tts_service import TTSResult, VoiceCloneResult, clone_voice, text_to_speech
 from services.video_service import (
@@ -54,8 +51,4 @@ __all__ = [
     "ImageProvider", "ImageResult", "ImageStatus",
     # Video
     "generate_video", "query_video_status", "GenerateVideoRequest",
-    "VideoProvider", "VideoResult", "VideoStatus",
-    # Compositor
-    "compose_video", "compose_from_pipeline", "CompositorInput",
-    "SubtitleSegment", "CompositorResult",
-]
+    "VideoProvider", "VideoResu

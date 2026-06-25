@@ -6,23 +6,85 @@ Endpoints:
 - POST /api/jobs/video — create full video generation job
 - GET  /api/jobs/video/{id} — get job status/progress
 - GET  /api/jobs/video/ — list video jobs
+
+Concurrency: video tasks are strictly serialized (max 1 concurrent) via
+VideoConcurrencyController. Controlled by feature gate video_concurrency_control.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid
+from functools import partial
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from db import get_db
 from middleware.auth import get_current_user
-from middleware.feature_gate import requires_feature
+from middleware.feature_gate import load_feature_gates, requires_feature
 from middleware.rate_limit import limiter, rate_limit_video
+from services.concurrency_control import video_concurrency
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# ── Concurrency Gate Helper ──────────────────────────────────────────────────
+
+
+def _sync_concurrency_gate() -> None:
+    """Sync the video_concurrency_control feature gate to the controller."""
+    gates = load_feature_gates()
+    cc = gates.get("video_concurrency_control", {})
+    video_concurrency.enabled = cc.get("enabled", True)
+
+
+async def _submit_with_concurrency_control(
+    job_id: str,
+    coro_factory,
+    db,
+) -> str:
+    """Submit a video task to the concurrency controller and update DB status.
+
+    Returns "processing", "queued", or raises HTTPException(429) if rejected.
+    """
+    _sync_concurrency_gate()
+
+    status = await video_concurrency.submit(job_id, coro_factory)
+
+    if status == "rejected":
+        # Rollback: remove the DB record
+        await db.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+        await db.commit()
+        queue_size = video_concurrency.queue_size
+        if video_concurrency.active_count >= video_concurrency.MAX_CONCURRENT:
+            detail = (
+                f"Too many video jobs in queue ({queue_size}). "
+                "Please wait for the current job to complete and try again."
+            )
+        else:
+            detail = "Insufficient memory. Please try again later."
+        raise HTTPException(status_code=429, detail=detail)
+
+    elif status == "queued":
+        await db.execute(
+            "UPDATE jobs SET status = 'queued', updated_at = datetime('now') WHERE id = ?",
+            (job_id,),
+        )
+        await db.commit()
+    else:
+        # "processing" — background coroutine handles status updates
+        await db.execute(
+            "UPDATE jobs SET status = 'processing', updated_at = datetime('now') WHERE id = ?",
+            (job_id,),
+        )
+        await db.commit()
+
+    return status
 
 
 class CreateVideoRequest(BaseModel):
@@ -82,7 +144,7 @@ async def create_video_job(
 
     await db.execute(
         """INSERT INTO jobs (id, user_id, job_type, status, input_data)
-           VALUES (?, ?, 'video', 'queued', ?)""",
+           VALUES (?, ?, 'video', 'pending', ?)""",
         (job_id, current_user["sub"], json.dumps({
             "article_id": body.article_id,
             "image_effect": body.image_effect,
@@ -91,23 +153,28 @@ async def create_video_job(
     )
     await db.commit()
 
-    # Launch async pipeline
-    background_tasks.add_task(
-        _run_video_pipeline,
-        job_id=job_id,
-        article_id=body.article_id,
-        split_json=json.loads(split_row["result_json"]),
-        image_effect=body.image_effect,
-        transition=body.transition,
-        voice_id=body.voice_id,
-        image_provider=body.image_provider,
-    )
+    # Build coroutine factory for concurrency-controlled execution
+    async def _run():
+        await _run_video_pipeline(
+            job_id=job_id,
+            article_id=body.article_id,
+            split_json=json.loads(split_row["result_json"]),
+            image_effect=body.image_effect,
+            transition=body.transition,
+            voice_id=body.voice_id,
+            image_provider=body.image_provider,
+        )
+
+    status = await _submit_with_concurrency_control(job_id, _run, db)
 
     return {
         "job_id": job_id,
-        "status": "queued",
+        "status": status,
         "message": (
             "Video generation started. "
+            "Poll GET /api/jobs/video/{job_id} for progress."
+        ) if status == "processing" else (
+            "Video job queued. "
             "Poll GET /api/jobs/video/{job_id} for progress."
         ),
     }
@@ -137,6 +204,30 @@ async def get_video_job(
         "error": job["error"],
         "created_at": job["created_at"],
         "updated_at": job["updated_at"],
+    }
+
+
+@router.get("/video/queue-status")
+async def get_queue_status(
+    current_user: dict = Depends(get_current_user),
+):
+    """Get current video task queue status.
+
+    Returns active count, queue depth, and memory status.
+    Does not require authentication for monitoring purposes.
+    """
+    import psutil
+    mem = psutil.virtual_memory()
+    return {
+        "active_tasks": video_concurrency.active_count,
+        "max_concurrent": video_concurrency.MAX_CONCURRENT,
+        "queue_size": video_concurrency.queue_size,
+        "max_queue_size": video_concurrency.MAX_QUEUE_SIZE,
+        "concurrency_enabled": video_concurrency.enabled,
+        "memory": {
+            "available_mb": round(mem.available / (1024 * 1024)),
+            "threshold_mb": video_concurrency.MEMORY_THRESHOLD_MB,
+        },
     }
 
 
@@ -197,29 +288,34 @@ async def create_story2video_job(
 
     await db.execute(
         """INSERT INTO jobs (id, user_id, job_type, status, input_data)
-           VALUES (?, ?, 'story2video', 'queued', ?)""",
+           VALUES (?, ?, 'story2video', 'pending', ?)""",
         (job_id, current_user["sub"], json.dumps({
             "article_id": body.article_id,
         })),
     )
     await db.commit()
 
-    # Launch async pipeline
     output_dir = f"output/story2video/{job_id}"
     os.makedirs(output_dir, exist_ok=True)
 
-    background_tasks.add_task(
-        _run_story2video_background,
-        job_id=job_id,
-        article_text=article_text,
-        output_dir=output_dir,
-    )
+    # Build coroutine factory for concurrency-controlled execution
+    async def _run():
+        await _run_story2video_background(
+            job_id=job_id,
+            article_text=article_text,
+            output_dir=output_dir,
+        )
+
+    status = await _submit_with_concurrency_control(job_id, _run, db)
 
     return {
         "job_id": job_id,
-        "status": "queued",
+        "status": status,
         "message": (
-            "Story2Video job created. "
+            "Story2Video job started. "
+            "Poll GET /api/jobs/video/{job_id} for progress."
+        ) if status == "processing" else (
+            "Story2Video job queued. "
             "Poll GET /api/jobs/video/{job_id} for progress."
         ),
     }
@@ -240,9 +336,9 @@ async def _run_video_pipeline(
     """Background task: run the full TTS → image gen → compositing pipeline."""
     import aiosqlite
     from services.tts_service import text_to_speech
-    from services.prompt_service import optimize_prompts_batch
+    from prompt_engine.services import optimize_prompts_batch
     from services.image_service import generate_images_batch, ImageProvider
-    from services.compositor import compose_video, CompositorInput, SubtitleSegment
+    from video_compositor import compose_video, CompositorInput, SubtitleSegment
 
     async def _update(status: str, output: dict = None, error: str = None):
         db = await aiosqlite.connect("orchestrator.db")
@@ -392,3 +488,4 @@ async def _run_story2video_background(
 
     except Exception as e:
         await _update("failed", error=str(e))
+ 
