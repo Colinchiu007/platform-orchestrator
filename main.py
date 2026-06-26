@@ -65,4 +65,7 @@ def create_app() -> FastAPI:
     app.include_router(video.router, prefix="/api/jobs", tags=["video"])
     app.include_router(publish.router, prefix="/api/jobs", tags=["publish"])
     app.include_router(trending.router, prefix="/api/trending", tags=["trending"])
-    app.include_router(das
+    app.include_router(dashboard.router)
+    return app
+
+app = create_app()

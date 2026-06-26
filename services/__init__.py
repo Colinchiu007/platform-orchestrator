@@ -51,4 +51,5 @@ __all__ = [
     "ImageProvider", "ImageResult", "ImageStatus",
     # Video
     "generate_video", "query_video_status", "GenerateVideoRequest",
-    "VideoProvider", "VideoResu
+    "VideoProvider", "VideoResult", "VideoStatus",
+]

@@ -488,4 +488,3 @@ async def _run_story2video_background(
 
     except Exception as e:
         await _update("failed", error=str(e))
- 

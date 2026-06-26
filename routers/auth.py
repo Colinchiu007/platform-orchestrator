@@ -12,7 +12,10 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from passlib.context import CryptContext
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
+
+from shared_models.auth import JWTPayload, RefreshRequest as SharedRefreshRequest
+RefreshRequest = SharedRefreshRequest  # noqa: F811  — use shared-models Pydantic model
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,7 +36,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 class RegisterRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
-    email: EmailStr = Field(...)
+    email: str | None = Field(None)
     password: str = Field(..., min_length=6, max_length=128)
 
 
@@ -49,10 +52,6 @@ class TokenResponse(BaseModel):
     expires_in: int
     user: dict
 
-
-class RefreshRequest(BaseModel):
-    refresh_token: str
-    access_token: str | None = None
 
 
 class LogoutRequest(BaseModel):

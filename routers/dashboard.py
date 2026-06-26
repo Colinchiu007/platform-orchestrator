@@ -167,4 +167,17 @@ async def generate_pipeline(
     })
     await db.execute(
         """INSERT INTO jobs (id, user_id, job_type, status, input_data, created_at)
-           VALUES (?, ?, 'video', 'pe
+           VALUES (?, ?, 'video', 'pending', ?, datetime('now'))""",
+        (job_id, current_user["sub"], input_data),
+    )
+    await db.commit()
+
+    # 3. Dispatch background pipeline (db-agnostic params)
+    background_tasks.add_task(
+        run_pipeline,
+        db_path=DB_PATH,
+        job_id=job_id,
+        content=content,
+    )
+
+    return {"job_id": job_id, "status": "pending"}

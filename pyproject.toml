@@ -7,7 +7,7 @@ name = "platform-orchestrator"
 version = "0.1.0"
 description = "Thin-shell FastAPI orchestrator for the content-to-video pipeline"
 authors = [{name = "Colinchiu007"}]
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
     "shared-models",
     "fastapi>=0.100.0",

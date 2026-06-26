@@ -17,6 +17,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
 from config import settings
+from shared_models.auth import JWTPayload
 
 security = HTTPBearer(auto_error=False)
 
