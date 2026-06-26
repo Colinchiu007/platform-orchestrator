@@ -1,8 +1,10 @@
 name: CI
 
 on:
+  push:
+    branches: [main, master]
   pull_request:
-    types: [opened, synchronize, reopened]
+    branches: [main, master]
 
 jobs:
   test:
@@ -21,4 +23,3 @@ jobs:
       - name: 运行测试
         run: |
           python -m pytest -v --timeout=30 -x --tb=short 2>&1 || echo "⚠️ 部分测试失败"
-
