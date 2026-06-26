@@ -18,6 +18,8 @@ from db import init_db
 from db_pg import init_pg_db
 from middleware.rate_limit import setup_rate_limiting
 from routers import aggregator, auth, dashboard, payment, prompt, publish, splitter, trending, video, web
+from routers import provider_admin, provider_user
+from services.provider_router import get_router
 
 
 @asynccontextmanager
@@ -25,6 +27,8 @@ async def lifespan(app: FastAPI):
     """Initialize databases on startup."""
     await init_db()
     await init_pg_db()
+    router = get_router()
+    await router.init_db()
     yield
 
 
@@ -64,8 +68,4 @@ def create_app() -> FastAPI:
     app.include_router(prompt.router, prefix="/api/prompts", tags=["prompts"])
     app.include_router(video.router, prefix="/api/jobs", tags=["video"])
     app.include_router(publish.router, prefix="/api/jobs", tags=["publish"])
-    app.include_router(trending.router, prefix="/api/trending", tags=["trending"])
-    app.include_router(dashboard.router)
-    return app
-
-app = create_app()
+    app.
