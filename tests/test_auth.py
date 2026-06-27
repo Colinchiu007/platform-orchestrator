@@ -29,7 +29,7 @@ TEST_USER = {
 @pytest.fixture(autouse=True)
 def clean_tables():
     """Remove test data and reset rate-limit counters between test runs."""
-    conn = sqlite3.connect("orchestrator.db")
+    conn = sqlite3.connect("test_auth.db")
     try:
         conn.execute("DELETE FROM refresh_tokens")
         conn.execute("DELETE FROM users")
@@ -83,7 +83,7 @@ def test_login_creates_refresh_row(client):
     tokens = _login(client)
     jti = _get_jti(tokens["refresh_token"])
 
-    conn = sqlite3.connect("orchestrator.db")
+    conn = sqlite3.connect("test_auth.db")
     cursor = conn.execute(
         "SELECT token_jti, user_uuid, revoked FROM refresh_tokens WHERE token_jti = ?",
         (jti,),
@@ -122,7 +122,7 @@ def test_logout_revokes(client):
     })
     assert resp.status_code == 200
 
-    conn = sqlite3.connect("orchestrator.db")
+    conn = sqlite3.connect("test_auth.db")
     cursor = conn.execute(
         "SELECT revoked FROM refresh_tokens WHERE token_jti = ?",
         (jti,),
