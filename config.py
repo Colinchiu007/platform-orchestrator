@@ -50,7 +50,9 @@ class Settings(BaseSettings):
     wechat_appsecret: str = ""
 
     # ── Feature Gates ───────────────────────────────────────────────────
-    feature_gates_path: str = "D:/Data/projects/feature_gates.yaml"
+    # Default: local feature_gates.yaml in project root.
+    # Override via PO_FEATURE_GATES_PATH for CI or ECS (/srv/projects/feature_gates.yaml).
+    feature_gates_path: str = "feature_gates.yaml"
 
     # ── CORS ────────────────────────────────────────────────────────────
     cors_origins: list[str] = [
@@ -65,10 +67,4 @@ class Settings(BaseSettings):
     def _validate_secret_key(self):
         if not self.secret_key:
             raise ValueError(
-                "PO_SECRET_KEY environment variable is not set. "
-                "Set a strong random key before starting the server."
-            )
-        return self
-
-
-settings = Settings()
+                "PO_SECRET_KEY environment variable is not set.

@@ -1,0 +1,48 @@
+features:
+  article_auto_fetch:
+    enabled: true
+    tier: 2
+  article_manual_fetch:
+    enabled: true
+    tier: 1
+  pipeline_v2:
+    description: Block 引擎版视频管线 (engine/ + blocks/)，关闭时走原始 hardcode 管线
+    enabled: true
+    tier: 2
+  premium_content:
+    enabled: false
+    tier: 3
+  prompt_classify:
+    enabled: true
+    tier: 1
+  prompt_optimize:
+    enabled: true
+    tier: 1
+  publish_multi_platform:
+    enabled: false
+    tier: 3
+  publish_single_platform:
+    enabled: true
+    tier: 2
+  split_batch:
+    enabled: true
+    tier: 2
+  split_single:
+    enabled: true
+    tier: 1
+  trending_feed:
+    enabled: true
+    tier: 1
+  trending_to_pipeline:
+    enabled: true
+    tier: 2
+  video_concurrency_control:
+    description: Strict single-concurrency video task execution with FIFO queue
+    enabled: true
+    tier: 1
+  video_fixed_template:
+    enabled: true
+    tier: 2
+  video_full_pipeline:
+    enabled: false
+    tier: 3
