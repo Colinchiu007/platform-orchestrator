@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     wechat_appid: str = ""
     wechat_appsecret: str = ""
 
+    # ── Integration API Key ────────────────────────────────────────────
+    # Used by Story2Video (and other internal services) to call
+    # orchestrator endpoints without full JWT auth.
+    api_key: str = ""
+    api_key_user_id: str = "api-story2video"
+
     # ── Feature Gates ───────────────────────────────────────────────────
     feature_gates_path: str = "D:/Data/projects/feature_gates.yaml"
 
@@ -69,7 +75,6 @@ class Settings(BaseSettings):
                 "Set a strong random key before starting the server."
             )
         return self
-
 
 
 # Module-level settings instance
