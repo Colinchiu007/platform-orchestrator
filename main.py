@@ -68,4 +68,12 @@ def create_app() -> FastAPI:
     app.include_router(prompt.router, prefix="/api/prompts", tags=["prompts"])
     app.include_router(video.router, prefix="/api/jobs", tags=["video"])
     app.include_router(publish.router, prefix="/api/jobs", tags=["publish"])
-    app.
+    app.include_router(trending.router, prefix="/api/trending", tags=["trending"])
+    app.include_router(dashboard.router)
+    app.include_router(provider_admin.router, prefix="/api/admin", tags=["admin"])
+    app.include_router(provider_user.router, prefix="/api/user", tags=["user"])
+    return app
+
+
+# Module-level app instance for uvicorn
+app = create_app()

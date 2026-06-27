@@ -2,7 +2,7 @@
 
 > **立项日期**: 2026-06-03
 > **最后更新**: 2026-06-27
-> **当前版本**: v0.4.0（Phase 0 已部署，Phase 1 Block 基建完成）
+> **当前版本**: v0.4.2（Phase 0 已部署，Phase 1 Block 基建 + ProviderRouter 全栈完成）
 > **产品定位**: "一站式视频生成平台"的统一入口，薄壳整合所有子模块，提供路由转发、统一鉴权、功能开关和异步编排能力
 > **目标用户**: 自媒体创作者、视频运营团队、内容生产者
 > **技术架构**: FastAPI + Python SDK 同进程导入 + aiosqlite + PostgreSQL + Nginx 反向代理
@@ -20,7 +20,8 @@
 3. **功能开关**：通过 `feature_gates.yaml` 动态控制各模块可用性，支持分级付费
 4. **零开销集成**：所有子模块通过 `pip install -e` 导入为 Python SDK，同进程调用，无网络延迟
 5. **异步编排**：长耗时任务（视频合成、AI 改写）通过 `BackgroundTasks` 串行执行
-6. **资源可控**：严格的内存和并发约束，适配 4G 阿里云 ECS
+6. **统一 LLM 配置**：ProviderRouter 中心化管理所有 AI 提供商的 API Key、Base URL、模型映射，支持 Admin 运营后台配置 + 用户自配置覆盖
+7. **资源可控**：严格的内存和并发约束，适配 4G 阿里云 ECS
 
 ### 1.2 产品边界
 
@@ -33,6 +34,7 @@
 | ✅ 异步任务 | BackgroundTasks 编排，视频任务严格串行 |
 | ✅ 统一前端 | Next.js 应用（:3000），Nginx 代理整合 |
 | ✅ 数据库 | aiosqlite（WAL 模式）+ PostgreSQL（共享） |
+| ✅ 统一 LLM 配置 | ProviderRouter 中心化管理 7+ AI 提供商的 API Key，加密存储，双层面 UI（Admin + 用户） |
 | ❌ 不包含 | 内容创作（归 Content-Aggregator）、热榜采集（归 TrendScope）、视频渲染（归 Story2Video）、多平台发布（归 Multi-Publish） |
 
 > **设计原则**：orchestrator 是"薄壳"——只做路由、鉴权、编排，不做业务逻辑。所有业务功能由各子模块独立完成。
@@ -249,6 +251,8 @@ platform-orchestrator/
 │   ├── dashboard.py           # Dashboard 路由
 │   ├── payment.py             # 支付路由
 │   ├── prompt.py              # 提示词优化路由
+│   ├── provider_admin.py      # ProviderRouter Admin CRUD
+│   ├── provider_user.py       # 用户自配置 API 路由
 │   ├── publish.py             # 多平台发布路由
 │   ├── splitter.py            # 智能分句路由
 │   ├── trending.py            # 热榜路由
@@ -277,6 +281,7 @@ platform-orchestrator/
 │   ├── image_service.py       # 图片处理服务
 │   ├── pipeline.py            # 全流程编排引擎
 │   ├── prompt_service.py      # 提示词服务
+│   ├── provider_router.py     # 统一 LLM 配置管理（Fernet 加密）
 │   ├── publish_service.py     # 发布服务
 │   ├── rewrite.py             # 内容改写服务
 │   ├── tts_service.py         # 语音合成服务
@@ -336,6 +341,16 @@ platform-orchestrator/
 | POST | `/api/jobs/video` | Video | 是 | video_fixed_template | 视频合成 |
 | POST | `/api/jobs/publish` | Multi-Publish | 是 | publish_single_platform | 发布内容 |
 | GET | `/dashboard` | Dashboard | 是 | - | 运营看板 |
+| GET | `/dashboard` | Dashboard | 是 | - | 运营看板 |
+| GET | `/api/admin/providers` | ProviderRouter Admin | 是 (admin) | - | 列出所有 Provider |
+| POST | `/api/admin/providers` | ProviderRouter Admin | 是 (admin) | - | 创建 Provider |
+| PUT | `/api/admin/providers/{name}` | ProviderRouter Admin | 是 (admin) | - | 更新 Provider |
+| DELETE | `/api/admin/providers/{name}` | ProviderRouter Admin | 是 (admin) | - | 删除 Provider |
+| POST | `/api/admin/providers/{name}/test` | ProviderRouter Admin | 是 (admin) | - | 测试 Provider |
+| GET | `/api/user/providers` | ProviderRouter User | 是 | - | 用户可见的 Provider 列表 |
+| GET | `/api/user/providers/{name}` | ProviderRouter User | 是 | - | 查看单个 Provider |
+| PUT | `/api/user/providers/{name}/key` | ProviderRouter User | 是 | - | 设置用户 API Key |
+| DELETE | `/api/user/providers/{name}/key` | ProviderRouter User | 是 | - | 删除用户 API Key |
 | GET | `/` | Web | 否 | - | 统一前端入口 |
 
 ### 4.4 模块集成接口规范
@@ -360,7 +375,68 @@ async def split_article(id: str, db = Depends(get_db)):
 - 各模块保持独立 Git 仓库和独立部署能力
 - 模块间通过 `shared-models` (Pydantic v2) 交换数据
 
-### 4.5 Block 编排引擎 (v0.4.x+)
+### 4.5 ProviderRouter — 统一 LLM 配置管理
+
+ProviderRouter 取代了原本分散在各 service 文件中的 `settings.xxx_api_key` 硬编码模式。
+
+**数据模型：**
+
+```sql
+-- Admin 配置的提供商
+CREATE TABLE provider_configs (
+    id TEXT PRIMARY KEY,              -- UUID
+    name TEXT UNIQUE NOT NULL,        -- "openai", "doubao", "minimax"
+    provider_type TEXT NOT NULL,      -- "llm" | "tts" | "image" | "video"
+    display_name TEXT NOT NULL,       -- 展示名
+    base_url TEXT NOT NULL,           -- API endpoint
+    api_key_encrypted TEXT NOT NULL,  -- Fernet (AES-GCM) 加密存储
+    models JSON DEFAULT '[]',
+    config JSON DEFAULT '{}',
+    enabled INTEGER DEFAULT 1,
+    min_tier INTEGER DEFAULT 1,
+    created_at TEXT,
+    updated_at TEXT
+);
+
+-- 用户自带的 API Key（覆盖 admin 配置）
+CREATE TABLE user_api_keys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_uuid TEXT NOT NULL,
+    provider_name TEXT NOT NULL,
+    api_key_encrypted TEXT NOT NULL,
+    base_url TEXT,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT,
+    updated_at TEXT,
+    UNIQUE(user_uuid, provider_name)
+);
+```
+
+**加密方案：**
+- 使用 `cryptography.fernet.Fernet`（AES-GCM 128-bit）
+- 加密密钥从 `PO_SECRET_KEY` 通过 SHA-256 派生
+- 用户自配置 Key 和管理员 Key 分表存储，加密方式相同
+
+**双层面 UI：**
+- **Admin 运营后台** `[admin]`：`/admin/providers` — 表格展示所有 Provider，支持新增/编辑/删除/测试连接，配置所有提供商的 API Key、Base URL、模型、Tier 权限
+- **用户自助** `[auth]`：`/settings/providers` — 展示用户 Tier 可用 Provider 列表，支持用户设置/删除自己的 API Key 覆盖管理员配置
+- **路由**：后端 API 在 `routers/provider_admin.py` + `provider_user.py`；前端页面在 `unified-frontend/src/app/admin/providers/` + `src/app/settings/providers/`
+
+**前端实现：**
+- Admin 页面使用共享的 `AppLayout` 组件，侧边栏新增「Provider 管理」导航项
+- Admin 页面支持三种状态：loading（骨架屏）、error（ErrorState + 重试）、empty（EmptyState + 引导按钮）
+- Admin 页面内联编辑（点击行直接展开编辑表单），删除确认使用 `window.confirm`
+- 用户页面使用折叠卡片布局（展开后配置 API Key），密码输入框支持明/暗文切换
+
+**已迁移的服务：**
+
+| 服务文件 | 原配置字段 | 迁移后 |
+|---------|-----------|--------|
+| `services/rewrite.py` | `settings.openai_api_key` / `openai_base_url` / `openai_model` | `get_router().get("openai")` |
+| `services/tts_service.py` | `settings.doubao_api_key` | `get_router().get("doubao")` |
+| `services/image_service.py` | `settings.minimax_api_key` / `sensenova_api_key` / `kling_api_key` | `get_router().get("xxx")` |
+
+### 4.6 Block 编排引擎 (v0.4.x+)
 
 详见 `docs/architecture-v2.md`。核心概念：
 
@@ -417,112 +493,4 @@ async def split_article(id: str, db = Depends(get_db)):
         │ /api/*     │ │  /         │  │ /static    │
         │→:8000      │ │→:3000      │  │→:8000      │
         │ FastAPI    │ │ Next.js    │  │ 静态文件    │
-        │ systemd    │ │ 前端       │  │            │
-        └─────┬──────┘ └────────────┘  └────────────┘
-              │
-     ┌────────┴────────┐
-     │ 4G Alibaba ECS │
-     │ Alibaba Cloud  │
-     │  Linux 3       │
-     └─────────────────┘
-```
-
-### 5.3 数据管道（全链路）
-
-```
-TrendScope 热榜发现
-    │  trending_to_pipeline (tier 2)
-    ▼
-Content-Aggregator 采集 + AI 改写
-    │
-    ▼
-Smart-Sentence-Splitter 智能分句
-    │
-    ▼
-Prompt-Engine 提示词优化
-    │
-    ▼
-Story2Video 视频合成 (串行, FIFO队列)
-    │
-    ▼
-Multi-Publish 多平台发布
-```
-
----
-
-## 六、版本历史和路线图
-
-### 6.1 版本历史
-
-| 版本 | 日期 | 内容 | 状态 |
-|------|------|------|------|
-| v0.1.0 | 2026-05 | 初始骨架搭建，基础路由 + JWT 认证 + SQLite | ✅ |
-| v0.2.0 | 2026-05 | PostgreSQL 支持，auth 表 + 订阅 tier | ✅ |
-| v0.3.0 | 2026-06 | Nginx 反向代理，统一前端整合，ECS 部署 | ✅ |
-
-### 6.2 路线图
-
-| 阶段 | 版本 | 内容 | 目标 |
-|------|------|------|------|
-| **Phase 0** | v0.3.x | 骨架 + 路由 + 认证 + 部署 + 基础 SDK 集成 | ✅ 已上线 |
-| **Phase 1** | v0.4.x | BackgroundTasks 异步编排 + 全链路管道 + 进度推送 | 📅 Next |
-| **Phase 2** | v0.5.x | 任务持久化（SQLite）+ 失败重试 + 回调通知 | 📅 规划中 |
-| **Phase 3** | v0.6.x | 计费集成 + API 用量统计 + 管理员面板 | 📅 规划中 |
-| **Phase 4** | v1.0.0 | 生产稳定版，全链路 SLA 保障 + 监控告警 | 📅 规划中 |
-
-### 6.3 风险与应对
-
-| 风险 | 影响 | 应对 |
-|------|------|------|
-| 子模块 SDK 兼容性 | 高 | shared-models 统一数据契约 + 可编辑安装即时更新 |
-| 内存超限 | 高 | 严格串行视频任务 + systemd MemoryMax=2.5G |
-| 单点故障 | 中 | Nginx 反向代理 + systemd 自动重启 |
-| 子模块独立变更破坏集成 | 中 | 回归测试套件 + CI 门禁 |
-| PostgreSQL 连接池耗尽 | 中 | 异步驱动（asyncpg）+ 连接池限制 |
-
----
-
-## 七、验收标准
-
-### v0.3.0 验收（Phase 0）
-
-- [x] `/health` 返回 `{"status": "ok"}`
-- [x] JWT 注册 → 登录 → Token 刷新 → 鉴权保护完整流程
-- [x] 功能开关加载 + `@requires_feature` 装饰器正常工作
-- [x] 所有 6 个子模块 SDK 可成功导入
-- [x] 视频任务严格串行执行（FIFO 队列验证通过）
-- [x] Nginx 反向代理配置正确：`/api/*` → :8000，`/` → :3000
-- [x] systemd 服务开机自启 + 崩溃自动重启
-- [x] idle 内存 < 200MB
-- [x] 25+ 测试全部通过
-- [x] unified-frontend 正常可访问
-
-### v0.4.0 目标（Phase 1 — Block 基建）
-
-- [x] Block 基类 + 注册表：ABC 泛型 + AsyncGenerator run() + @register_block 装饰器
-- [x] Graph 模型：Node/Link 数据模型 + DAG 拓扑排序 + 完整性验证
-- [x] 执行引擎：状态机 (PENDING→READY→RUNNING→COMPLETED/FAILED) + 输入解析 + 错误处理
-- [x] 5 个示例 Block：Splitter/Optimizer/TTS/ImageGen/Compose（包装现有 services）
-- [x] Block 引擎单元测试覆盖（25 项：21 引擎单元 + 4 管线集成测试，全通过）
-- [x] pipeline_v2.py：Block 引擎版视频管线（build_graph → engine.run → DB 写回）
-- [x] video.py 集成：feature gate 开关（pipeline_v2 → 默认关闭，打开即走 Block 引擎）
-- [x] feature_gates.yaml 新增：pipeline_v2 开关
-- [ ] BackgroundTasks 全链路管道：trend → collect → rewrite → split → prompt → video → publish
-- [ ] 任务进度推送（WebSocket 或 SSE）
-- [ ] 任务状态查询 API
-- [ ] 管道失败回滚或降级策略
-- [ ] 各阶段耗时监控埋点
-
----
-
-## 八、开发规范
-
-详见 `AGENTS.md`，包含：
-- 路由添加流程（`routers/` + `main.py` 注册）
-- 功能开关添加（`feature_gates.yaml` + `@requires_feature`）
-- 鉴权模式（公开端点 / 保护端点）
-- 数据库操作（aiosqlite 依赖注入）
-- 模块对接（Python SDK 导入方式）
-- 测试规范（pytest + TestClient + 回归测试）
-- 提交规范（feat/fix/docs/refactor）
-- 资源守则（不引入新服务、不引入重框架、内存上限 2.5G、视频串行）
+        │ systemd    │ │ 前端       │  │    

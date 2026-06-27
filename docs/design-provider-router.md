@@ -1,7 +1,7 @@
 # ProviderRouter — 统一 LLM 配置管理与双层面 UI
 
 > **设计日期**: 2026-06-27
-> **状态**: Draft → Ready for Implementation
+> **状态**: ✅ Implemented (全部阶段完成)
 > **涉及项目**: platform-orchestrator (后端 API + 服务) + unified-frontend (Admin/User 页面)
 
 ---
@@ -97,9 +97,9 @@ API Key 在 DB 中以 AES-GCM 加密存储。使用 `PO_ENCRYPTION_KEY`（从 `P
 
 ## 阶段划分
 
-| Phase | 内容 | 依赖 |
-|-------|------|------|
-| P1 | DB Schema + ProviderRouter 服务 + 迁移现有 service | 无 |
-| P2 | Admin CRUD API + User provider API | P1 |
-| P3 | Admin 前端页面 | P2 |
-| P4 | User 前端页面 + PRD 更新 | P3 |
+| Phase | 内容 | 依赖 | 状态 |
+|-------|------|------|------|
+| P1 | DB Schema + ProviderRouter 服务 | 无 | ✅ |
+| P1b | 迁移现有 service 到 ProviderRouter | P1 | ✅ |
+| P2 | Admin CRUD API + User provider API | P1 | ✅ |
+| P3 | Adm
