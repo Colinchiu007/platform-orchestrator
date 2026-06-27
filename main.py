@@ -18,7 +18,7 @@ from db import init_db
 from db_pg import init_pg_db
 from middleware.rate_limit import setup_rate_limiting
 from routers import aggregator, auth, dashboard, payment, prompt, publish, splitter, trending, video, web
-from routers import provider_admin, provider_user
+from routers import provider_admin, provider_user, usage
 from services.provider_router import get_router
 
 
@@ -72,6 +72,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard.router)
     app.include_router(provider_admin.router, prefix="/api/admin", tags=["admin"])
     app.include_router(provider_user.router, prefix="/api/user", tags=["user"])
+    app.include_router(usage.router, prefix="/api/user", tags=["user"])
     return app
 
 

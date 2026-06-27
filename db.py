@@ -102,6 +102,15 @@ async def init_db() -> None:
             )
         """)
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS user_daily_usage (
+                user_uuid TEXT NOT NULL,
+                date TEXT NOT NULL,
+                videos_created INTEGER DEFAULT 0,
+                videos_quota INTEGER DEFAULT 10,
+                PRIMARY KEY (user_uuid, date)
+            )
+        """)
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS payments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 checkout_id TEXT UNIQUE NOT NULL,
