@@ -140,6 +140,116 @@ _PROMPTS: dict[str, tuple[str, str]] = {
         "目标平台: {platform}\n\n"
         "请为这个主题推荐最佳的正文结构，并给出详细大纲。"
     ),
+    # ── SEO/CRO 扩展 ─────────────────────────────────────────────────────
+    "generate_seo_titles": (
+        "你是一位 SEO 内容策略专家，擅长为搜索流量生成高点击率标题。\n\n"
+        "## 核心能力\n"
+        "- 理解搜索意图分类：信息型(info)、商业型(commercial)、交易型(transactional)、导航型(navigational)\n"
+        "- 精通 SEO 标题优化：关键词前置、字符控制(50-60字符)、品牌词位置\n"
+        "- 融合爆款元素与搜索引擎友好度\n"
+        "- 遵循 Google E-E-A-T 标准（经验/专业/权威/信任）\n\n"
+        "## 标题结构类型\n"
+        "1. 数字列表式：'N个[关键词]方法/技巧/趋势'\n"
+        "2. How-to 式：'如何[达成目标]（N步指南）'\n"
+        "3. 对比式：'[A] vs [B]：哪个更适合[场景]'\n"
+        "4. 问题式：'为什么[常见问题]？[解决方案]'\n"
+        "5. 最佳式：'N个最佳[分类][年份]'\n"
+        "6. 指南式：'[主题]完整指南：从入门到精通'\n"
+        "7. 数据式：'[数字]%的[人群]正在[趋势]（[数据年份]）'\n"
+        "8. 地域式：'[城市][服务]推荐/N选'\n\n"
+        "## 输出要求\n"
+        "- 每次生成{count}个标题\n"
+        "- 每个标题附带：标题文本、标题结构类型、搜索意图、字符数、预估CTR(0-100)、设计理由\n"
+        "- 标题长度控制在50-60字符\n"
+        "- 主关键词尽量前置\n"
+        "- 输出格式：JSON数组",
+        "## 主题\n{topic}\n\n"
+        "## 主要关键词\n{keywords}\n\n"
+        "## 搜索意图\n{search_intent}\n\n"
+        "## 目标平台\n{platform}\n\n"
+        "## 额外上下文\n{context}\n\n"
+        "请生成{count}个 SEO 优化的标题候选，覆盖不同结构和搜索意图。"
+    ),
+    "analyze_cro": (
+        "你是一位转化率优化(CRO)专家，擅长分析营销页面并提供可操作的改进建议。\n\n"
+        "## CRO 分析框架（按影响力排序）\n\n"
+        "### 1. 价值主张清晰度（最高影响）\n"
+        "- 访客5秒内能否理解这是什么、为什么值得关注？\n"
+        "- 主要收益是否清晰、具体、有差异化？\n"
+        "- 是否使用客户语言（而非公司术语）？\n\n"
+        "### 2. 标题有效性\n"
+        "- 标题是否传达核心价值主张？\n"
+        "- 是否匹配搜索来源的预期？\n"
+        "- 是否足够具体（数字/时间/成果）？\n\n"
+        "### 3. CTA 层级与优化\n"
+        "- 是否有一个清晰的主要行动？\n"
+        "- 不滚动能否看到 CTA？\n"
+        "- 按钮文案是否传达价值（而非仅动作）？\n"
+        "  - 弱：'提交'/'注册'/'了解更多'\n"
+        "  - 强：'免费试用'/'获取报告'/'查看定价'\n\n"
+        "### 4. 视觉层级与可扫描性\n"
+        "- 扫码用户能否抓住核心信息？\n"
+        "- 最重要元素是否视觉突出？\n"
+        "- 白空间是否充足？\n\n"
+        "### 5. 信任信号\n"
+        "- 客户logo（尤其知名品牌）\n"
+        "- 推荐语（具体、署名、带照片）\n"
+        "- 案例数据（真实数字）\n"
+        "- 评分/评论数\n"
+        "- 安全标识\n\n"
+        "### 6. 异议处理\n"
+        "- FAQ 解答常见疑虑\n"
+        "- 保证/退款政策\n"
+        "- 价格透明度\n\n"
+        "### 7. 摩擦点\n"
+        "- 表单项过多\n"
+        "- 下一步不明确\n"
+        "- 移动端体验\n"
+        "- 加载速度\n\n"
+        "## 输出要求\n"
+        "- 按7个维度逐一分析评分(0-100)\n"
+        "- 发现的问题 + 具体改进建议\n"
+        "- 快速胜利项（立即实施）\n"
+        "- 高影响变更（需要更多投入）\n"
+        "- 标题/CTA 替代文案建议\n"
+        "- 输出格式：JSON",
+        "## 页面类型\n{page_type}\n\n"
+        "## 页面URL\n{page_url}\n\n"
+        "## 页面内容\n{page_content}\n\n"
+        "请对以上页面进行完整的 CRO 分析。"
+    ),
+    "generate_ai_seo_content": (
+        "你是一位 AI 搜索引擎优化(AI SEO/GEO)专家，擅长将内容改写成 AI 系统易于提取和引用的格式。\n\n"
+        "## 核心原则\n"
+        "AI 系统提取的是段落(passage)而非页面(page)——每个关键主张应当可以独立存在。\n\n"
+        "## AI 可提取内容块模式\n\n"
+        "### 1. 定义块（回答 'What is X?'）\n"
+        "- 40-60字精确定义\n"
+        "- 放在章节最前面\n"
+        "- 包含核心关键词\n\n"
+        "### 2. 步骤块（回答 'How to X?'）\n"
+        "- 编号步骤\n"
+        "- 每步一个明确动作\n"
+        "- 步骤数3-6个为佳\n\n"
+        "### 3. 对比块（回答 'X vs Y?'）\n"
+        "- 表格格式最佳\n"
+        "- 包含特征、价格、适用场景\n\n"
+        "### 4. FAQ 块（回答常见问题）\n"
+        "- 自然语言问句\n"
+        "- 30-50字简洁回答\n"
+        "- 适合 FAQ Schema\n\n"
+        "### 5. 数据/统计块\n"
+        "- 具体数字 + 来源引用\n"
+        "- 包含日期（AI 重视时效性）\n\n"
+        "## 输出要求\n"
+        "- 将原文改写成包含上述块结构的 AI 优化版本\n"
+        "- 每个块标注类型和目标查询\n"
+        "- 输出格式：JSON",
+        "## 原文\n{content}\n\n"
+        "## 主题\n{topic}\n\n"
+        "## 目标关键词\n{keywords}\n\n"
+        "请将以上内容改写成 AI 搜索引擎友好的格式。"
+    ),
 }
 
 
@@ -202,6 +312,63 @@ class RewriteResult(BaseModel):
     style: str = ""
     original_word_count: int = 0
     rewritten_word_count: int = 0
+    generated_at: datetime = Field(default_factory=lambda: datetime.now().astimezone())
+
+
+# ── SEO/CRO Models ────────────────────────────────────────────────────
+
+
+class SEOTitleSuggestion(BaseModel):
+    """SEO-optimized single title suggestion."""
+    title: str = ""
+    structure: str = ""
+    search_intent: str = ""
+    char_count: int = 0
+    predicted_ctr: float = 0.0
+    reasoning: str = ""
+
+
+class SEOTitleGenerationResult(BaseModel):
+    """SEO title generation result."""
+    titles: list[SEOTitleSuggestion] = Field(default_factory=list)
+    topic: str = ""
+    keywords: str = ""
+    search_intent: str = ""
+    generated_at: datetime = Field(default_factory=lambda: datetime.now().astimezone())
+
+
+class CRODimension(BaseModel):
+    """Single CRO analysis dimension."""
+    dimension: str = ""
+    score: float = 0.0
+    issues: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+
+
+class CROAnalysisReport(BaseModel):
+    """Full CRO page analysis result."""
+    page_type: str = ""
+    page_url: str = ""
+    overall_score: float = 0.0
+    dimensions: list[CRODimension] = Field(default_factory=list)
+    quick_wins: list[str] = Field(default_factory=list)
+    high_impact_changes: list[str] = Field(default_factory=list)
+    headline_alternatives: list[str] = Field(default_factory=list)
+    cta_alternatives: list[str] = Field(default_factory=list)
+
+
+class AISEOContentBlock(BaseModel):
+    """Single AI-extractable content block."""
+    block_type: str = ""  # definition / step_by_step / comparison / faq / statistic
+    content: str = ""
+    target_query: str = ""
+
+
+class AIOptimizedContentResult(BaseModel):
+    """Content structured for AI search extractability."""
+    blocks: list[AISEOContentBlock] = Field(default_factory=list)
+    original_content: str = ""
+    topic: str = ""
     generated_at: datetime = Field(default_factory=lambda: datetime.now().astimezone())
 
 
@@ -516,6 +683,151 @@ class ViralCopyGenerator:
             platform=platform,
         )
 
+    # ── SEO/CRO Methods ────────────────────────────────────────────────
+
+    async def generate_seo_titles(
+        self,
+        topic: str,
+        keywords: str = "",
+        search_intent: str = "info",
+        platform: str = "通用",
+        context: str = "",
+        count: int = 5,
+        temperature: float = 0.7,
+    ) -> SEOTitleGenerationResult:
+        """生成 SEO 优化的标题候选。
+
+        SEO 标题比社交标题更注重：
+        - 关键词前置和密度
+        - 搜索意图匹配
+        - 字符数控制 (50-60)
+        - E-E-A-T 信号
+
+        Args:
+            topic: 主题关键词
+            keywords: 主关键词和长尾词，逗号分隔
+            search_intent: 搜索意图 (info/commercial/transactional/navigational)
+            platform: 目标平台（Google/Bing 等）
+            context: 额外上下文（品牌名、目标受众等）
+            count: 生成数量
+            temperature: LLM 温度
+
+        Returns:
+            SEOTitleGenerationResult with SEO-optimized title suggestions
+        """
+        sys_prompt, user_template = _PROMPTS["generate_seo_titles"]
+        user_content = user_template.format(
+            topic=topic,
+            keywords=keywords or topic,
+            search_intent=search_intent,
+            platform=platform,
+            context=context or "暂无",
+            count=count,
+        )
+
+        raw = await self._call(
+            system_prompt=sys_prompt,
+            user_content=user_content,
+            temperature=temperature,
+        )
+
+        suggestions = self._parse_seo_title_suggestions(raw)
+        return SEOTitleGenerationResult(
+            titles=suggestions[:count],
+            topic=topic,
+            keywords=keywords,
+            search_intent=search_intent,
+        )
+
+    async def analyze_cro_page(
+        self,
+        page_content: str,
+        page_type: str = "landing",
+        page_url: str = "",
+        temperature: float = 0.7,
+    ) -> CROAnalysisReport:
+        """对营销页面进行 CRO 分析。
+
+        Analyzes a marketing page across 7 CRO dimensions:
+        1. Value Proposition Clarity
+        2. Headline Effectiveness
+        3. CTA Hierarchy
+        4. Visual Hierarchy
+        5. Trust Signals
+        6. Objection Handling
+        7. Friction Points
+
+        Args:
+            page_content: 页面内容文本
+            page_type: 页面类型 (homepage/landing/pricing/feature/blog)
+            page_url: 页面 URL
+            temperature: LLM 温度
+
+        Returns:
+            CROAnalysisReport with dimensional breakdown
+        """
+        sys_prompt, user_template = _PROMPTS["analyze_cro"]
+        user_content = user_template.format(
+            page_type=page_type,
+            page_url=page_url or "未提供",
+            page_content=page_content,
+        )
+
+        raw = await self._call(
+            system_prompt=sys_prompt,
+            user_content=user_content,
+            temperature=temperature,
+            max_tokens=4096,
+        )
+
+        return self._parse_cro_report(raw, page_type, page_url)
+
+    async def generate_ai_seo_content(
+        self,
+        content: str,
+        topic: str,
+        keywords: str = "",
+        temperature: float = 0.7,
+    ) -> AIOptimizedContentResult:
+        """将内容改写为 AI 搜索引擎友好的格式。
+
+        Restructures content into extractable blocks:
+        - Definition blocks (40-60 words)
+        - Step-by-step blocks
+        - Comparison blocks
+        - FAQ blocks
+        - Data/statistic blocks
+
+        Args:
+            content: 原文内容
+            topic: 主题
+            keywords: 目标关键词
+            temperature: LLM 温度
+
+        Returns:
+            AIOptimizedContentResult with structured blocks
+        """
+        sys_prompt, user_template = _PROMPTS["generate_ai_seo_content"]
+        user_content = user_template.format(
+            content=content,
+            topic=topic,
+            keywords=keywords or topic,
+        )
+
+        raw = await self._call(
+            system_prompt=sys_prompt,
+            user_content=user_content,
+            temperature=temperature,
+            max_tokens=4096,
+        )
+
+        blocks = self._parse_ai_seo_blocks(raw)
+        return AIOptimizedContentResult(
+            blocks=blocks,
+            original_content=content,
+            topic=topic,
+        )
+
     # ── Internal ────────────────────────────────────────────────────────
 
     async def _call(
@@ -630,6 +942,111 @@ class ViralCopyGenerator:
                     suggestions.append(StructureSuggestion(structure=line[:100]))
 
         return suggestions
+
+    def _parse_seo_title_suggestions(self, raw: str) -> list[SEOTitleSuggestion]:
+        """Parse LLM output into SEOTitleSuggestion list."""
+        parsed = _parse_json_array(raw)
+        suggestions: list[SEOTitleSuggestion] = []
+
+        for item in parsed:
+            if not isinstance(item, dict):
+                continue
+            title = item.get("title", item.get("text", ""))
+            if not title:
+                continue
+            suggestions.append(SEOTitleSuggestion(
+                title=title,
+                structure=item.get("structure", item.get("type", "")),
+                search_intent=item.get("search_intent", item.get("intent", "")),
+                char_count=int(item.get("char_count", item.get("length", 0))),
+                predicted_ctr=float(item.get("predicted_ctr", item.get("score", 0))),
+                reasoning=item.get("reasoning", item.get("reason", "")),
+            ))
+
+        # Fallback: line-by-line
+        if not suggestions:
+            for line in raw.strip().split("\n"):
+                line = line.strip().strip("-*").strip()
+                if line and len(line) > 5:
+                    suggestions.append(SEOTitleSuggestion(title=line[:100]))
+
+        return suggestions
+
+    def _parse_cro_report(
+        self,
+        raw: str,
+        page_type: str,
+        page_url: str,
+    ) -> CROAnalysisReport:
+        """Parse LLM output into CROAnalysisReport."""
+        parsed = _parse_json_array(raw)
+        dimensions: list[CRODimension] = []
+        quick_wins: list[str] = []
+        high_impact: list[str] = []
+        headlines: list[str] = []
+        ctas: list[str] = []
+        overall = 0.0
+
+        for item in parsed:
+            if not isinstance(item, dict):
+                continue
+            dim_type = item.get("type", item.get("dimension", ""))
+            if dim_type in ("overall", "summary"):
+                overall = float(item.get("score", item.get("overall_score", 0)))
+                quick_wins = item.get("quick_wins", item.get("quick_wins", []))
+                high_impact = item.get("high_impact", item.get("high_impact_changes", []))
+                headlines = item.get("headline_alternatives", item.get("headlines", []))
+                ctas = item.get("cta_alternatives", item.get("ctas", []))
+            elif dim_type:
+                dimensions.append(CRODimension(
+                    dimension=dim_type,
+                    score=float(item.get("score", 0)),
+                    issues=item.get("issues", item.get("problems", [])),
+                    recommendations=item.get("recommendations", item.get("suggestions", [])),
+                ))
+
+        return CROAnalysisReport(
+            page_type=page_type,
+            page_url=page_url,
+            overall_score=overall,
+            dimensions=dimensions,
+            quick_wins=quick_wins if isinstance(quick_wins, list) else [],
+            high_impact_changes=high_impact if isinstance(high_impact, list) else [],
+            headline_alternatives=headlines if isinstance(headlines, list) else [],
+            cta_alternatives=ctas if isinstance(ctas, list) else [],
+        )
+
+    def _parse_ai_seo_blocks(self, raw: str) -> list[AISEOContentBlock]:
+        """Parse LLM output into AISEOContentBlock list."""
+        parsed = _parse_json_array(raw)
+        blocks: list[AISEOContentBlock] = []
+
+        for item in parsed:
+            if not isinstance(item, dict):
+                continue
+            block_type = item.get("block_type", item.get("type", ""))
+            content = item.get("content", item.get("text", ""))
+            if not block_type or not content:
+                continue
+            blocks.append(AISEOContentBlock(
+                block_type=block_type,
+                content=content,
+                target_query=item.get("target_query", item.get("query", "")),
+            ))
+
+        # If we got a single object with a blocks field, use that
+        if not blocks and parsed:
+            first = parsed[0]
+            if isinstance(first, dict) and "blocks" in first:
+                for b in first["blocks"]:
+                    if isinstance(b, dict):
+                        blocks.append(AISEOContentBlock(
+                            block_type=b.get("block_type", b.get("type", "")),
+                            content=b.get("content", b.get("text", "")),
+                            target_query=b.get("target_query", b.get("query", "")),
+                        ))
+
+        return blocks
 
 
 # ── Factory ─────────────────────────────────────────────────────────────
