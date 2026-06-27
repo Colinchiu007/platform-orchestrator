@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-06-27
+
+### Added
+
+- **ProviderRouter**: Unified LLM provider config management system
+  - Fernet AES-GCM encrypted storage for API keys
+  - aiosqlite persistence with tier-based access control
+  - Admin CRUD API + user provider query API
+  - Admin frontend page at `/admin/providers`
+  - User provider config page at `/settings/providers`
+- **ProviderRouter Migration**: 5 services migrated from settings.xxx to ProviderRouter
+  - rewrite.py, tts_service.py, image_service.py, video_service.py, publish_service.py
+- **Usage Tracking**: User daily usage quota enforcement (free=3/basic=10/pro=50/enterprise=200)
+  - `GET /api/user/usage` endpoint, 429 response when over quota
+- **Subscription Lifecycle Daemon**: Auto-expire subscriptions on daily startup
+- **Admin User Management**: List/detail/toggle-status API with pagination and filtering
+- **E2E Test Suite**: 15 test cases across health/auth/provider CRUD/user operations/usage
+- **Admin Users Tests**: 16 tests with pagination/filter/search/status toggle
+- **Subscription Lifecycle Tests**: 8 tests for expiry detection and maintenance
+
+### Changed
+
+- routers/video.py: Fixed queue-status route shadowing, added quota check before video creation
+- db_pg.py: Wrapped init_pg_db() in try/except for graceful PostgreSQL fallback
+
+### Security
+
+- API keys now encrypted at rest via Fernet AES-GCM
+- ProviderRouter tier enforcement: admin-only write, admin+user read
+
 ## [0.3.2] - 2026-06-27
 
 ### Fixed
@@ -18,35 +48,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - middleware/auth.py: imports JWTPayload from shared_models
-- routers/auth.py: RefreshRequest now uses shared_models.auth.RefreshRequest
-- Total test count: 150 (was 139, +11 integration tests)
-
-## [0.3.1] - 2026-06-26
-
-### Changed
-- RegisterRequest.email 改为可选（EmailStr → str | None）
-- 前端请求失败时自动解析 FastAPI 422 错误，显示可读消息而非原始 JSON
-- 注册页邮箱改为选填
-
-### Added
-- ECS 生产部署完成（nginx + orchestrator + frontend）
-- systemd 进程保活
-- POST /generate 接入 BackgroundTask
-
-### Changed
-- N 合 1 前端路由代理配置
-- 统一认证 SSO (P3-01) 完成
-- 全链路集成测试通过
-
-## [0.2.0] - 2026-06-26
-
-### Added
-- N 合 1 前端路由代理配置
-- 统一认证 SSO (P3-01) 完成
-- 全链路集成测试通过
-
-## [0.1.0] - 2026-06-25
-
-### Added
-- 初始版本，FastAPI 薄壳统一入口搭建
-- feature_gates.yaml 集成
