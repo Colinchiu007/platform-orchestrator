@@ -71,4 +71,6 @@ class Settings(BaseSettings):
         return self
 
 
+
+# Module-level settings instance
 settings = Settings()
