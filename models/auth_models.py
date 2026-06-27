@@ -15,7 +15,7 @@ Base = declarative_base()
 
 
 def _utcnow():
-    return datetime.now(timezone.utc)
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class AuthUser(Base):
