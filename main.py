@@ -80,6 +80,7 @@ def create_app() -> FastAPI:
     app.include_router(provider_admin.router, prefix="/api/admin", tags=["admin"])
     app.include_router(provider_user.router, prefix="/api/user", tags=["user"])
     app.include_router(usage.router, prefix="/api/user", tags=["user"])
+    app.include_router(admin_users.router, prefix="/api/admin", tags=["admin"])
     return app
 
 
