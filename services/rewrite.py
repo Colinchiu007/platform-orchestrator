@@ -11,7 +11,7 @@ from typing import Optional
 
 import httpx
 
-from config import settings
+from services.provider_router import get_router
 
 # ── Style Prompts (from aggregator v2) ──────────────────────────────────────
 
@@ -137,15 +137,23 @@ async def rewrite_content(
             "添加适当的标题层级和段落结构。"
         )
 
-    # Use provided keys or fall back to settings/env
-    key = api_key or settings.openai_api_key
-    url = base_url or settings.openai_base_url
-    mdl = model or settings.openai_model
+    # Use provided keys or fall back to ProviderRouter
+    key = api_key
+    url = base_url
+    mdl = model
+
+    if not key or not url or not mdl:
+        router = get_router()
+        cfg = await router.get("openai")
+        if cfg:
+            key = key or cfg["api_key"]
+            url = url or cfg.get("base_url", url)
+            mdl = mdl or (cfg["models"][0] if cfg.get("models") else mdl)
 
     if not key:
         raise ValueError(
-            "No LLM API key configured. Set PO_OPENAI_API_KEY env var "
-            "or pass api_key parameter."
+            "No LLM API key configured. Configure 'openai' provider "
+            "via admin panel or pass api_key parameter."
         )
 
     result = await _call_llm(

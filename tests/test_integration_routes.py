@@ -87,10 +87,10 @@ class TestVideoIntegration:
         assert resp.status_code == 401
 
     def test_queue_status_authenticated(self):
-        """GET /api/jobs/video/queue-status returns 200 with auth."""
+        """GET /api/jobs/queue-status returns 200 with auth."""
         token = _get_auth_token()
         client = _client()
-        resp = client.get("/api/jobs/video/queue-status",
+        resp = client.get("/api/jobs/queue-status",
                           headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code == 200
         data = resp.json()

@@ -2,7 +2,7 @@
 
 > **立项日期**: 2026-06-03
 > **最后更新**: 2026-06-27
-> **当前版本**: v0.4.2（Phase 0 已部署，Phase 1 Block 基建 + ProviderRouter 全栈完成）
+> **当前版本**: v0.5.1（Phase 0 已部署，Phase 1 Block 基建 + ProviderRouter 全栈 + Membership Phase 2 完成）
 > **产品定位**: "一站式视频生成平台"的统一入口，薄壳整合所有子模块，提供路由转发、统一鉴权、功能开关和异步编排能力
 > **目标用户**: 自媒体创作者、视频运营团队、内容生产者
 > **技术架构**: FastAPI + Python SDK 同进程导入 + aiosqlite + PostgreSQL + Nginx 反向代理
@@ -85,6 +85,39 @@
 | 鉴权中间件 | `get_current_user` 依赖注入，保护私有端点 | ✅ |
 | 订阅等级 | 用户 tier 字段控制功能访问权限 | ✅ |
 | 数据库 | PostgreSQL（auth 表）+ SQLite 本地开发回退 | ✅ |
+
+#### F2.1：用量跟踪 (Usage Tracking)
+
+| 子功能 | 描述 | 状态 |
+|--------|------|------|
+| 日用量表 | `daily_usage` 表记录用户每日视频配额消耗，包含 `user_uuid`、`date`、`videos_used`、`videos_quota` | ✅ |
+| 配额计算 | 免费用户日配额 2 条，付费用户按订阅等级递增（Basic 10 / Pro 50 / Enterprise 无限） | ✅ |
+| 原子递减 | `POST /api/subscription/consume` 原子递减当日配额（SQL 级 `UPDATE ... SET videos_used = videos_used + 1 WHERE ...`） | ✅ |
+| 用量查询 | `GET /api/subscription/usage` 返回当日用量和配额 | ✅ |
+| 前端展示 | 设置页「订阅用量」卡片展示配额环 + 剩余条数 + 套餐名称 | ✅ |
+| 配额拦截 | 视频创建时自动检测配额，不足时返回 429 + 明确错误提示 | ✅ |
+| 升级入口 | 配额不足时前端显示「升级套餐」引导按钮，跳转支付页 | ✅ |
+
+#### F2.2：会员周期管理 (Subscription Lifecycle)
+
+| 子功能 | 描述 | 状态 |
+|--------|------|------|
+| 过期检测 | `services/subscription_lifecycle.py` — `check_expired_subscriptions(db)` 扫描 `subscriptions` 表，检测 `end_date < now() AND status = 'active'` 的记录 | ✅ |
+| 自动过期 | 过期订阅状态自动标记为 `expired`，用户 `subscription_type` 降级为 `free` | ✅ |
+| 启动维护 | `daily_maintenance()` 在应用启动时自动执行（lifespan hook），使用独立 aiosqlite 连接 | ✅ |
+| 保护规则 | NULL end_date（终身订阅）和 future end_date 不受影响；已过期订阅不重复处理 | ✅ |
+| 测试覆盖 | 8 项测试覆盖过期/Future/NULL/已过期/混合场景，全部通过 | ✅ |
+
+#### F2.3：管理员用户管理 (Admin User Management)
+
+| 子功能 | 描述 | 状态 |
+|--------|------|------|
+| 用户列表 | `GET /api/admin/users` — 分页列出用户，支持 `subscription_type`/`is_active` 过滤 + `search` 搜索 | ✅ |
+| 用户详情 | `GET /api/admin/users/{uuid}` — 获取用户基本信息、订阅信息、近30天用量历史 | ✅ |
+| 状态切换 | `PUT /api/admin/users/{uuid}/status` — 管理员激活/停用用户 | ✅ |
+| 鉴权保护 | 所有 admin 端点要求 `role=admin`，非 admin 返回 403 | ✅ |
+| 前端页面 | `/admin/users` — 表格展示用户列表，含搜索、套餐过滤、状态切换、分页、详情弹窗 | ✅ |
+| 16 项测试 | TDD 驱动，覆盖列表/分页/过滤/搜索/权限/详情/状态切换，全部通过 | ✅ |
 
 #### F3：功能开关（Feature Gates）
 
@@ -351,6 +384,9 @@ platform-orchestrator/
 | GET | `/api/user/providers/{name}` | ProviderRouter User | 是 | - | 查看单个 Provider |
 | PUT | `/api/user/providers/{name}/key` | ProviderRouter User | 是 | - | 设置用户 API Key |
 | DELETE | `/api/user/providers/{name}/key` | ProviderRouter User | 是 | - | 删除用户 API Key |
+| GET | `/api/admin/users` | Admin Users | 是 (admin) | - | 列出用户（分页/过滤/搜索） |
+| GET | `/api/admin/users/{uuid}` | Admin Users | 是 (admin) | - | 用户详情（含订阅+用量） |
+| PUT | `/api/admin/users/{uuid}/status` | Admin Users | 是 (admin) | - | 激活/停用用户 |
 | GET | `/` | Web | 否 | - | 统一前端入口 |
 
 ### 4.4 模块集成接口规范
@@ -430,67 +466,81 @@ CREATE TABLE user_api_keys (
 
 **已迁移的服务：**
 
-| 服务文件 | 原配置字段 | 迁移后 |
-|---------|-----------|--------|
 | `services/rewrite.py` | `settings.openai_api_key` / `openai_base_url` / `openai_model` | `get_router().get("openai")` |
 | `services/tts_service.py` | `settings.doubao_api_key` | `get_router().get("doubao")` |
-| `services/image_service.py` | `settings.minimax_api_key` / `sensenova_api_key` / `kling_api_key` | `get_router().get("xxx")` |
-
-### 4.6 Block 编排引擎 (v0.4.x+)
-
-详见 `docs/architecture-v2.md`。核心概念：
-
-提出自 AutoGPT Block 架构（MIT License），将管道中的每个环节封装为**可组合、可复用、可独立测试的 Block**：
-
-| 概念 | 说明 |
-|------|------|
-| **Block** | 最小执行单元，继承 `Block[Input, Output]`，实现 `run()` AsyncGenerator |
-| **Graph** | Block 实例的有向无环图 (DAG)，通过 Node + Link 定义连接 |
-| **Engine** | DAG 拓扑排序 + 状态机执行 (PENDING→READY→RUNNING→COMPLETED/FAILED) |
-| **注册表** | 全局 `_BLOCK_REGISTRY`，`@register_block` 装饰器自动注册 |
-
-**设计约束：**
-- 不引入新服务（无 Celery/Redis/RabbitMQ）
-- 不修改任何被引用模块代码（零侵入）
-- 纯 asyncio 实现，可独立于 FastAPI 测试
-- 现有 `services/pipeline.py` 完整保留，新老共存
+| `services/image_service.py` | `settings.minimax_api_key` / `settings.sensenova_api_key` / `settings.kling_api_key` | `get_router().get("minimax")` / `get_router().get("sensenova")` / `get_router().get("kling")` |
+| `services/video_service.py` | `settings.kling_api_key` / `settings.jimeng_api_key` | `get_router().get("kling")` / `get_router().get("jimeng")` |
+| `services/publish_service.py` | `settings.wechat_appid` / `settings.wechat_appsecret` | `get_router().get("wechat")` |
 
 ---
 
-## 五、当前状态
+## 五、测试覆盖
 
-### 5.1 Phase 0（已部署）
+### 5.1 测试框架与模式
 
-当前处于 **Phase 0（骨架阶段）**，版本 v0.3.0，已部署到 4G 阿里云 ECS：
+| 维度 | 说明 |
+|------|------|
+| 框架 | pytest + fastapi.testclient.TestClient |
+| 数据库 | SQLite（WAL模式）替代PostgreSQL，通过 conftest.py 的 ATTACH DATABASE 模拟 auth schema |
+| 异步模式 | `asyncio_mode = strict` |
+| 认证 | JWT 手动构造（admin token）或 register + login 流程 |
+| 速率限制 | conftest.py 模块级 monkeypatch 替换 `rate_limit_video` 为 `"1000/hour"` |
+| 测试隔离 | 每个测试函数前执行 `clean_tables` fixture，清除 provider_configs、user_api_keys、users、refresh_tokens、subscriptions |
 
-| 项目 | 状态 | 说明 |
-|------|------|------|
-| FastAPI 骨架 | ✅ | 路由、中间件、数据库初始化完成 |
-| 统一认证 | ✅ | JWT 注册/登录/刷新完整实现 |
-| 功能开关 | ✅ | 13 个开关全配置，装饰器绑定 |
-| 子模块 SDK | ✅ | 6 个子模块可编辑安装，同进程调用 |
-| 视频串行 | ✅ | FIFO 队列，严格单视频任务 |
-| 统一前端 | ✅ | Next.js 应用，Nginx 代理到 :3000 |
-| Nginx 反向代理 | ✅ | /api/* → :8000，/ → :3000 |
-| systemd 保活 | ✅ | 自动重启，崩溃恢复 |
-| 数据库 | ✅ | aiosqlite (WAL) + PostgreSQL (auth) |
-| 测试套件 | ✅ | 25+ 测试，含 e2e 管道测试 |
-| 内存监控 | ✅ | idle < 200MB，峰值 < 800MB |
+### 5.2 E2E 集成测试 (test_pipeline_e2e.py)
 
-### 5.2 部署架构
+测试文件：`tests/test_pipeline_e2e.py`（15 个测试用例）
 
+| 测试类 | 测试方法 | 覆盖内容 |
+|--------|---------|---------|
+| **TestBasicEndpoints** | `test_health_check` | GET /health → 200, {"status":"ok"} |
+| | `test_feature_gates` | GET /api/features → 200, features dict |
+| **TestAuth** | `test_register_user` | POST /api/auth/register → 201, user created |
+| | `test_login_returns_jwt` | POST /api/auth/login → 200, access+refresh token |
+| **TestProviderAdminCRUD** | `test_create_provider` | POST /api/admin/providers → 201 (admin JWT) |
+| | `test_list_providers` | GET /api/admin/providers → list |
+| | `test_update_provider` | PUT /api/admin/providers/{name} → update fields |
+| | `test_delete_provider` | DELETE /api/admin/providers/{name} → 204 |
+| | `test_full_crud_cycle` | Create → List → Update → Delete → Verify deletion |
+| | `test_admin_rejects_non_admin` | Non-admin user → 403 Forbidden |
+| **TestUserProviderOperations** | `test_list_available_providers` | GET /api/user/providers → tier-filtered list |
+| | `test_set_and_view_provider_key` | PUT /api/user/providers/{name}/key → set + masked view |
+| | `test_delete_user_key` | DELETE /api/user/providers/{name}/key → 204 |
+| **TestUsageTracking** | `test_usage_requires_auth` | GET /api/user/usage → 401 without auth |
+| | `test_usage_returns_daily_info` | GET /api/user/usage → 200 with quota info |
+
+### 5.3 测试统计
+
+| 指标 | 数值 |
+|------|------|
+| 测试文件总数 | 20+ |
+| 总测试用例数 | 70+ |
+| E2E 测试数 | 15 |
+| ProviderRouter 单元测试 | 17 |
+| 引擎 (Block/Graph/Executor) 测试 | 15 |
+| 视频服务单元测试 | 20+ |
+| 功能开关测试 | 8 |
+
+### 5.4 运行方式
+
+```bash
+# 运行全部测试
+python -m pytest tests/ -v
+
+# 运行 E2E 测试
+python -m pytest tests/test_pipeline_e2e.py -v
+
+# 运行 ProviderRouter 单元测试
+python -m pytest tests/test_provider_router.py -v
+
+# 运行引擎测试
+python -m pytest tests/test_engine.py -v
 ```
-                              Internet
-                                  │
-                          ┌───────▼───────┐
-                          │   Nginx :443  │
-                          │  SSL 终止     │
-                          └───┬───────────┘
-                              │
-              ┌───────────────┼───────────────┐
-              │               │               │
-        ┌─────▼──────┐ ┌─────▼──────┐  ┌─────▼──────┐
-        │ /api/*     │ │  /         │  │ /static    │
-        │→:8000      │ │→:3000      │  │→:8000      │
-        │ FastAPI    │ │ Next.js    │  │ 静态文件    │
-        │ systemd    │ │ 前端       │  │    
+
+### 5.5 已知问题
+
+| 问题 | 影响范围 | 根因 |
+|------|---------|------|
+| `routers/video.py` 缺少 `increment_usage` / `QuotaExceededError` 导入 | video pipeline e2e 测试 | 引用 `services.quota` 但未 import |
+| 部分 auth 测试直接查询 `orchestrator.db` 而非 `test_auth.db` | auth/login e2e 测试 | PG→SQLite 迁移后测试未更新 |
+| feature_gates.yaml 在 CI 环境不存在 | features 端点 e2e 测试 | 测试环境需配置 feature_gates.yaml 路径 |

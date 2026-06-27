@@ -191,6 +191,30 @@ async def create_video_job(
     }
 
 
+@router.get("/queue-status")
+async def get_queue_status(
+    current_user: dict = Depends(get_current_user),
+):
+    """Get current video task queue status.
+
+    Returns active count, queue depth, and memory status.
+    Does not require authentication for monitoring purposes.
+    """
+    import psutil
+    mem = psutil.virtual_memory()
+    return {
+        "active_tasks": video_concurrency.active_count,
+        "max_concurrent": video_concurrency.MAX_CONCURRENT,
+        "queue_size": video_concurrency.queue_size,
+        "max_queue_size": video_concurrency.MAX_QUEUE_SIZE,
+        "concurrency_enabled": video_concurrency.enabled,
+        "memory": {
+            "available_mb": round(mem.available / (1024 * 1024)),
+            "threshold_mb": video_concurrency.MEMORY_THRESHOLD_MB,
+        },
+    }
+
+
 @router.get("/video/{job_id}")
 async def get_video_job(
     job_id: str,
@@ -215,30 +239,6 @@ async def get_video_job(
         "error": job["error"],
         "created_at": job["created_at"],
         "updated_at": job["updated_at"],
-    }
-
-
-@router.get("/video/queue-status")
-async def get_queue_status(
-    current_user: dict = Depends(get_current_user),
-):
-    """Get current video task queue status.
-
-    Returns active count, queue depth, and memory status.
-    Does not require authentication for monitoring purposes.
-    """
-    import psutil
-    mem = psutil.virtual_memory()
-    return {
-        "active_tasks": video_concurrency.active_count,
-        "max_concurrent": video_concurrency.MAX_CONCURRENT,
-        "queue_size": video_concurrency.queue_size,
-        "max_queue_size": video_concurrency.MAX_QUEUE_SIZE,
-        "concurrency_enabled": video_concurrency.enabled,
-        "memory": {
-            "available_mb": round(mem.available / (1024 * 1024)),
-            "threshold_mb": video_concurrency.MEMORY_THRESHOLD_MB,
-        },
     }
 
 

@@ -13,7 +13,7 @@ from typing import Optional
 
 import httpx
 
-from config import settings
+from services.provider_router import get_router
 
 # ── Constants ───────────────────────────────────────────────────────────────
 
@@ -60,12 +60,17 @@ async def text_to_speech(
         voice_id: Voice ID from Doubao voice library.
         speed: Speed ratio (0.5-2.0).
         volume: Volume ratio (0.5-2.0).
-        api_key: Doubao API key (defaults to PO_DOUBAO_API_KEY env).
+        api_key: Doubao API key (defaults to ProviderRouter doubao config).
 
     Returns:
         TTSResult with local audio file path and duration.
     """
-    key = api_key or settings.doubao_api_key
+    key = api_key
+    if not key:
+        router = get_router()
+        cfg = await router.get("doubao")
+        if cfg:
+            key = cfg["api_key"]
     if not key:
         return TTSResult(audio_path="", duration_seconds=0, error="No API key configured")
 
@@ -137,7 +142,12 @@ async def clone_voice(
     Returns:
         VoiceCloneResult with voice_id for later polling.
     """
-    key = api_key or settings.doubao_api_key
+    key = api_key
+    if not key:
+        router = get_router()
+        cfg = await router.get("doubao")
+        if cfg:
+            key = cfg["api_key"]
     if not key:
         return VoiceCloneResult(voice_id="", status="error", name=name, error="No API key")
 

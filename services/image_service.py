@@ -17,7 +17,7 @@ from typing import Optional
 
 import httpx
 
-from config import settings
+from services.provider_router import get_router
 
 OUTPUT_DIR = Path("output/images")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -71,7 +71,12 @@ class GenerateImageRequest:
 
 async def _generate_minimax(req: GenerateImageRequest) -> ImageResult:
     """MiniMax image-01 — synchronous, returns URLs directly."""
-    key = req.api_key or settings.minimax_api_key
+    key = req.api_key
+    if not key:
+        router = get_router()
+        cfg = await router.get("minimax")
+        if cfg:
+            key = cfg["api_key"]
     if not key:
         return ImageResult(provider=ImageProvider.MINIMAX, status=ImageStatus.FAILED, error="No API key")
 
@@ -99,7 +104,12 @@ async def _generate_minimax(req: GenerateImageRequest) -> ImageResult:
 
 async def _generate_sensenova(req: GenerateImageRequest) -> ImageResult:
     """SenseNova — synchronous, returns URLs directly."""
-    key = req.api_key or settings.sensenova_api_key
+    key = req.api_key
+    if not key:
+        router = get_router()
+        cfg = await router.get("sensenova")
+        if cfg:
+            key = cfg["api_key"]
     if not key:
         return ImageResult(provider=ImageProvider.SENSENOVA, status=ImageStatus.FAILED, error="No API key")
 
@@ -121,7 +131,12 @@ async def _generate_sensenova(req: GenerateImageRequest) -> ImageResult:
 
 async def _generate_kling(req: GenerateImageRequest) -> ImageResult:
     """Kling Omni — asynchronous, returns task_id for polling."""
-    key = req.api_key or settings.kling_api_key
+    key = req.api_key
+    if not key:
+        router = get_router()
+        cfg = await router.get("kling")
+        if cfg:
+            key = cfg["api_key"]
     if not key:
         return ImageResult(provider=ImageProvider.KLING, status=ImageStatus.FAILED, error="No API key")
 

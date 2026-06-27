@@ -19,16 +19,23 @@ from db_pg import init_pg_db
 from middleware.rate_limit import setup_rate_limiting
 from routers import aggregator, auth, dashboard, payment, prompt, publish, splitter, trending, video, web
 from routers import provider_admin, provider_user, usage
+from routers import admin_users
 from services.provider_router import get_router
+from services.subscription_lifecycle import daily_maintenance
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize databases on startup."""
-    await init_db()
-    await init_pg_db()
-    router = get_router()
-    await router.init_db()
+    try:
+        await init_db()
+        await init_pg_db()
+        router = get_router()
+        await router.init_db()
+        await daily_maintenance()
+    except Exception:
+        import logging
+        logging.warning("Non-critical init error, continuing startup")
     yield
 
 
