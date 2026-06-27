@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.2] - 2026-06-27
+
+### Changed
+- pipeline_v2 feature gate enabled (Block 引擎管线，取代旧 hardcode 4 步流程)
+- feature_gates.yaml: pipeline_v2.enabled → true
+
+### Added
+- 全内容管道编排完成：趋势发现 → 采集 → 改写 → 分句 → 提示词 → 视频 (F5)
+
+
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),

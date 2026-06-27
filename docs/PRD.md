@@ -2,7 +2,7 @@
 
 > **立项日期**: 2026-06-03
 > **最后更新**: 2026-06-27
-> **当前版本**: v0.5.1（Phase 0 已部署，Phase 1 Block 基建 + ProviderRouter 全栈 + Membership Phase 2 完成）
+> **当前版本**: v0.5.2（Phase 0 已部署，Phase 1 全管线就绪 — pipeline_v2 启用 + ProviderRouter 全栈 + Membership Phase 2 完成）
 > **产品定位**: "一站式视频生成平台"的统一入口，薄壳整合所有子模块，提供路由转发、统一鉴权、功能开关和异步编排能力
 > **目标用户**: 自媒体创作者、视频运营团队、内容生产者
 > **技术架构**: FastAPI + Python SDK 同进程导入 + aiosqlite + PostgreSQL + Nginx 反向代理
@@ -162,7 +162,7 @@
 |--------|------|------|
 | BackgroundTasks | FastAPI 内置异步任务执行 | ✅ 基础支持 |
 | 视频串行 | 同时只允许 1 个视频合成任务，FIFO 队列 | ✅ |
-| 内容管道 | 趋势发现 → 采集 → 改写 → 分句 → 提示词 → 视频的全流程编排 | 📅 Phase 1 |
+| 内容管道 | 趋势发现 → 采集 → 改写 → 分句 → 提示词 → 视频的全流程编排 | ✅ Phase 1 (pipeline_v2) |
 
 ### 3.2 非功能需求
 
