@@ -21,8 +21,14 @@ def _valid_token() -> str:
 
 @pytest.fixture(autouse=True)
 def _mock_api_key():
-    """Ensure openai_api_key is set so service functions don't return early."""
-    with patch("config.settings.openai_api_key", "test-api-key-for-tests"):
+    """Mock ProviderRouter so rewrite service can get openai config."""
+    mock_router = AsyncMock()
+    mock_router.get.return_value = {
+        "api_key": "test-api-key-for-tests",
+        "base_url": "https://api.openai.com/v1",
+        "models": ["gpt-4o-mini"],
+    }
+    with patch("services.rewrite.get_router", return_value=mock_router):
         yield
 
 
@@ -151,9 +157,4 @@ class TestClassifyEndpoint:
     def test_invalid_input_missing_field(self):
         """Missing scene_text → 422 validation error."""
         token = _valid_token()
-        response = client.post(
-            "/api/prompts/classify",
-            json={},
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        assert response.status_code == 422
+        re

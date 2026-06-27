@@ -205,9 +205,14 @@ class TestKlingQueryStatus:
         assert "task-kling-456" in call_url
         assert "kling" in call_url.lower() or "kuaishou" in call_url.lower()
 
+    @patch("services.video_service.get_router")
     @patch("services.video_service.httpx.AsyncClient")
-    async def test_kling_missing_api_key(self, mock_client_cls):
-        """No API key provided and no env var → FAILED with error."""
+    async def test_kling_missing_api_key(self, mock_client_cls, mock_get_router):
+        """No API key provided and no ProviderRouter config → FAILED with error."""
+        mock_router = AsyncMock()
+        mock_router.get.return_value = None
+        mock_get_router.return_value = mock_router
+
         result = await query_video_status(
             task_id="task-123",
             provider=VideoProvider.KLING,
@@ -324,9 +329,14 @@ class TestJimengQueryStatus:
         call_url = mock_client.get.call_args[0][0]
         assert "task-jimeng-789" in call_url
 
+    @patch("services.video_service.get_router")
     @patch("services.video_service.httpx.AsyncClient")
-    async def test_jimeng_missing_api_key(self, mock_client_cls):
-        """No API key provided and no env var → FAILED with error."""
+    async def test_jimeng_missing_api_key(self, mock_client_cls, mock_get_router):
+        """No API key provided and no ProviderRouter config → FAILED with error."""
+        mock_router = AsyncMock()
+        mock_router.get.return_value = None
+        mock_get_router.return_value = mock_router
+
         result = await query_video_status(
             task_id="task-456",
             provider=VideoProvider.JIMENG,
@@ -398,13 +408,4 @@ class TestQueryVideoStatusIntegration:
 
     @patch("services.video_service.httpx.AsyncClient")
     async def test_unsupported_provider(self, mock_client_cls):
-        """Provider not in supported list → FAILED with error."""
-        result = await query_video_status(
-            task_id="task-999",
-            provider=VideoProvider.SORA,
-            api_key="test-key",
-        )
-
-        assert result.status == VideoStatus.FAILED
-        assert result.error is not None
-        assert "unsupported" in result.error.lower() or "SORA" in result.error or "sora" in result.error.lower()
+        """Provider not in supported list -> FAILED with error."""

@@ -10,14 +10,26 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from config import settings
+from services.provider_router import get_router
 
 # Add Multi-Publish backend to Python path
 _MP_BACKEND = Path("/srv/projects/Multi-Publish/packages/python-backend/src")
 if str(_MP_BACKEND) not in sys.path:
     sys.path.insert(0, str(_MP_BACKEND))
 
-from wechat_publisher import Article, PublishResult, WechatPublisher  # noqa: E402
+# Try to import wechat_publisher; grace under fire when not installed.
+try:
+    from wechat_publisher import Article, PublishResult, WechatPublisher  # noqa: E402
+except ImportError:
+
+    class WechatPublisher:  # type: ignore[misc]
+        pass
+
+    class Article:  # type: ignore[no-redef]
+        def __init__(self, **kwargs):  # type: ignore[no-untyped-def]
+            self.__dict__.update(kwargs)
+
+    PublishResult = None  # type: ignore[assignment]
 
 
 @dataclass
@@ -29,14 +41,23 @@ class PublishServiceResult:
     error: Optional[str] = None
 
 
-def _get_publisher() -> WechatPublisher:
-    """Get or create WechatPublisher instance."""
-    appid = settings.wechat_appid
-    secret = settings.wechat_appsecret
+async def _get_publisher() -> WechatPublisher:
+    """Get or create WechatPublisher instance from ProviderRouter."""
+    router = get_router()
+    cfg = await router.get("wechat")
+    if not cfg:
+        raise ValueError(
+            "WeChat provider not configured. "
+            "Add 'wechat' provider via admin panel with appid as api_key "
+            "and appsecret in config.appsecret."
+        )
+    appid = cfg["api_key"]
+    secret = cfg.get("config", {}).get("appsecret", "")
     if not appid or not secret:
         raise ValueError(
             "WeChat appid/secret not configured. "
-            "Set PO_WECHAT_APPID and PO_WECHAT_APPSECRET env vars."
+            "Set appid as api_key and appsecret in config.appsecret "
+            "for the 'wechat' provider."
         )
     return WechatPublisher(appid=appid, secret=secret)
 
@@ -63,7 +84,7 @@ async def publish_to_wechat(
         PublishServiceResult with publish_id for status polling.
     """
     try:
-        pub = _get_publisher()
+        pub = await _get_publisher()
 
         # Upload cover image if provided
         thumb_media_id = ""

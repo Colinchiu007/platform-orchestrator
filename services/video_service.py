@@ -14,7 +14,7 @@ from typing import Optional
 
 import httpx
 
-from config import settings
+from services.provider_router import get_router
 
 OUTPUT_DIR = Path("output/videos")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -70,7 +70,12 @@ class GenerateVideoRequest:
 
 async def _generate_kling(req: GenerateVideoRequest) -> VideoResult:
     """Kling video generation — async, returns task_id."""
-    key = req.api_key or settings.kling_api_key
+    key = req.api_key
+    if not key:
+        router = get_router()
+        cfg = await router.get("kling")
+        if cfg:
+            key = cfg["api_key"]
     if not key:
         return VideoResult(provider=VideoProvider.KLING, status=VideoStatus.FAILED, error="No API key")
 
@@ -103,7 +108,12 @@ async def _generate_kling(req: GenerateVideoRequest) -> VideoResult:
 
 async def _generate_jimeng(req: GenerateVideoRequest) -> VideoResult:
     """Jimeng video generation — returns task_id or direct URL."""
-    key = req.api_key or settings.jimeng_api_key
+    key = req.api_key
+    if not key:
+        router = get_router()
+        cfg = await router.get("jimeng")
+        if cfg:
+            key = cfg["api_key"]
     if not key:
         return VideoResult(provider=VideoProvider.JIMENG, status=VideoStatus.FAILED, error="No API key")
 
@@ -250,13 +260,19 @@ async def query_video_status(
     api_key: Optional[str] = None,
 ) -> VideoResult:
     """Query the status of an async video generation task."""
-    # Resolve API key from parameter or config
+    # Resolve API key from parameter or ProviderRouter
     resolved_key: str | None = api_key
     if resolved_key is None:
-        if provider == VideoProvider.KLING:
-            resolved_key = settings.kling_api_key
-        elif provider == VideoProvider.JIMENG:
-            resolved_key = settings.jimeng_api_key
+        router = get_router()
+        provider_name_map = {
+            VideoProvider.KLING: "kling",
+            VideoProvider.JIMENG: "jimeng",
+        }
+        pname = provider_name_map.get(provider)
+        if pname:
+            cfg = await router.get(pname)
+            if cfg:
+                resolved_key = cfg["api_key"]
 
     if not resolved_key:
         return VideoResult(

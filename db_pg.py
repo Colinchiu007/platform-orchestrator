@@ -47,9 +47,13 @@ async def get_db_pg() -> AsyncGenerator[AsyncSession, None]:
 
 async def init_pg_db() -> None:
     """Initialize PostgreSQL auth tables on startup."""
-    async with engine.begin() as conn:
-        # Create auth schema if not exists
-        await conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {settings.db_auth_schema}"))
-        await conn.execute(text(f"SET search_path TO {settings.db_auth_schema}, public"))
-        # Create tables from ORM models
-        await conn.run_sync(AuthBase.metadata.create_all)
+    try:
+        async with engine.begin() as conn:
+            # Create auth schema if not exists
+            await conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {settings.db_auth_schema}"))
+            await conn.execute(text(f"SET search_path TO {settings.db_auth_schema}, public"))
+            # Create tables from ORM models
+            await conn.run_sync(AuthBase.metadata.create_all)
+    except Exception as exc:
+        import logging
+        logging.warning(f"PostgreSQL unavailable, skipping init_pg_db: {exc}")
