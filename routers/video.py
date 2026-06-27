@@ -140,6 +140,17 @@ async def create_video_job(
             )
         )
 
+    # Check daily quota before creating video
+    from datetime import datetime
+    today = datetime.now().strftime("%Y-%m-%d")
+    try:
+        await increment_usage(db, current_user["sub"], today)
+    except QuotaExceededError as e:
+        raise HTTPException(
+            status_code=429,
+            detail=e.message,
+        )
+
     job_id = str(uuid.uuid4())
 
     await db.execute(
@@ -284,6 +295,17 @@ async def create_story2video_job(
     if not article_text.strip():
         raise HTTPException(status_code=400, detail="Article has no content")
 
+
+    # Check daily quota before creating video
+    from datetime import datetime
+    today = datetime.now().strftime("%Y-%m-%d")
+    try:
+        await increment_usage(db, current_user["sub"], today)
+    except QuotaExceededError as e:
+        raise HTTPException(
+            status_code=429,
+            detail=e.message,
+        )
     job_id = str(uuid.uuid4())
 
     await db.execute(
