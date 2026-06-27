@@ -333,7 +333,35 @@ async def _run_video_pipeline(
     voice_id: str,
     image_provider: str,
 ):
-    """Background task: run the full TTS → image gen → compositing pipeline."""
+    """Background task: run the full TTS → image gen → compositing pipeline.
+
+    Gates to new Block engine (pipeline_v2) when the feature gate is enabled.
+    Falls back to the original inline implementation otherwise.
+    """
+    from middleware.feature_gate import load_feature_gates
+
+    gates = load_feature_gates()
+    use_v2 = gates.get("pipeline_v2", {}).get("enabled", False)
+
+    if use_v2:
+        from services.pipeline_v2 import run_pipeline_v2
+
+        try:
+            await run_pipeline_v2(
+                job_id=job_id,
+                article_id=article_id,
+                split_json=split_json,
+                image_effect=image_effect,
+                transition=transition,
+                voice_id=voice_id,
+                image_provider=image_provider,
+            )
+        except Exception as e:
+            # run_pipeline_v2 已写 DB
+            logger.error("Pipeline v2 failed: job=%s error=%s", job_id, e)
+        return
+
+    # ── 旧管线（pipeline_v2 关闭时兜底） ───────────────────────────────────
     import aiosqlite
     from services.tts_service import text_to_speech
     from prompt_engine.services import optimize_prompts_batch

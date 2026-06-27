@@ -2,7 +2,7 @@
 
 > **立项日期**: 2026-06-03
 > **最后更新**: 2026-06-27
-> **当前版本**: v0.3.2（Phase 0 已部署）
+> **当前版本**: v0.4.0（Phase 0 已部署，Phase 1 Block 基建完成）
 > **产品定位**: "一站式视频生成平台"的统一入口，薄壳整合所有子模块，提供路由转发、统一鉴权、功能开关和异步编排能力
 > **目标用户**: 自媒体创作者、视频运营团队、内容生产者
 > **技术架构**: FastAPI + Python SDK 同进程导入 + aiosqlite + PostgreSQL + Nginx 反向代理
@@ -255,6 +255,21 @@ platform-orchestrator/
 │   ├── video.py               # 视频合成路由
 │   └── web.py                 # 前端页面路由
 │
+├── engine/                    # Block 编排引擎 (v0.4.x+)
+│   ├── __init__.py            # 包初始化 + Block 注册表
+│   ├── block.py               # Block 基类 (ABC + 泛型 + AsyncGenerator)
+│   ├── graph.py               # Graph/Node/Link 数据模型 + DAG 验证
+│   ├── executor.py            # DAG 执行引擎 + 状态机
+│   └── errors.py              # 异常类型体系
+│
+├── blocks/                    # 示例 Block 实现 (v0.4.x+)
+│   ├── __init__.py            # 自动注册所有 Block
+│   ├── splitter_block.py      # 分句 Block
+│   ├── optimizer_block.py     # 提示词优化 Block
+│   ├── tts_block.py           # 语音合成 Block
+│   ├── image_gen_block.py     # 图片生成 Block
+│   └── compose_block.py       # 视频合成 Block
+│
 ├── services/                  # 业务服务层
 │   ├── collect.py             # 内容采集服务
 │   ├── compositor.py          # 合成引擎
@@ -277,6 +292,7 @@ platform-orchestrator/
 │   ├── test_auth.py
 │   ├── test_concurrency.py
 │   ├── test_e2e_pipeline.py
+│   ├── test_engine.py         # Block 引擎单元测试 (v0.4.x+)
 │   ├── test_feature_gate.py
 │   ├── test_payment.py
 │   ├── test_prompt.py
@@ -295,7 +311,8 @@ platform-orchestrator/
 │   └── migrate_users.py       # 用户数据迁移脚本
 │
 ├── docs/
-│   └── PRD.md                 # 本文档
+│   ├── PRD.md                 # 本文档
+│   └── architecture-v2.md     # Block 编排架构补充说明 (v0.4.x+)
 │
 ├── AGENTS.md                  # 开发规范指南
 ├── CLAUDE.md                  # Claude 工作指令
@@ -342,6 +359,25 @@ async def split_article(id: str, db = Depends(get_db)):
 - 不修改被引用模块的任何代码（零侵入）
 - 各模块保持独立 Git 仓库和独立部署能力
 - 模块间通过 `shared-models` (Pydantic v2) 交换数据
+
+### 4.5 Block 编排引擎 (v0.4.x+)
+
+详见 `docs/architecture-v2.md`。核心概念：
+
+提出自 AutoGPT Block 架构（MIT License），将管道中的每个环节封装为**可组合、可复用、可独立测试的 Block**：
+
+| 概念 | 说明 |
+|------|------|
+| **Block** | 最小执行单元，继承 `Block[Input, Output]`，实现 `run()` AsyncGenerator |
+| **Graph** | Block 实例的有向无环图 (DAG)，通过 Node + Link 定义连接 |
+| **Engine** | DAG 拓扑排序 + 状态机执行 (PENDING→READY→RUNNING→COMPLETED/FAILED) |
+| **注册表** | 全局 `_BLOCK_REGISTRY`，`@register_block` 装饰器自动注册 |
+
+**设计约束：**
+- 不引入新服务（无 Celery/Redis/RabbitMQ）
+- 不修改任何被引用模块代码（零侵入）
+- 纯 asyncio 实现，可独立于 FastAPI 测试
+- 现有 `services/pipeline.py` 完整保留，新老共存
 
 ---
 
@@ -461,8 +497,16 @@ Multi-Publish 多平台发布
 - [x] 25+ 测试全部通过
 - [x] unified-frontend 正常可访问
 
-### v0.4.0 目标（Phase 1）
+### v0.4.0 目标（Phase 1 — Block 基建）
 
+- [x] Block 基类 + 注册表：ABC 泛型 + AsyncGenerator run() + @register_block 装饰器
+- [x] Graph 模型：Node/Link 数据模型 + DAG 拓扑排序 + 完整性验证
+- [x] 执行引擎：状态机 (PENDING→READY→RUNNING→COMPLETED/FAILED) + 输入解析 + 错误处理
+- [x] 5 个示例 Block：Splitter/Optimizer/TTS/ImageGen/Compose（包装现有 services）
+- [x] Block 引擎单元测试覆盖（25 项：21 引擎单元 + 4 管线集成测试，全通过）
+- [x] pipeline_v2.py：Block 引擎版视频管线（build_graph → engine.run → DB 写回）
+- [x] video.py 集成：feature gate 开关（pipeline_v2 → 默认关闭，打开即走 Block 引擎）
+- [x] feature_gates.yaml 新增：pipeline_v2 开关
 - [ ] BackgroundTasks 全链路管道：trend → collect → rewrite → split → prompt → video → publish
 - [ ] 任务进度推送（WebSocket 或 SSE）
 - [ ] 任务状态查询 API
