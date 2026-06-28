@@ -544,3 +544,49 @@ python -m pytest tests/test_engine.py -v
 | `routers/video.py` 缺少 `increment_usage` / `QuotaExceededError` 导入 | video pipeline e2e 测试 | 引用 `services.quota` 但未 import |
 | 部分 auth 测试直接查询 `orchestrator.db` 而非 `test_auth.db` | auth/login e2e 测试 | PG→SQLite 迁移后测试未更新 |
 | feature_gates.yaml 在 CI 环境不存在 | features 端点 e2e 测试 | 测试环境需配置 feature_gates.yaml 路径 |
+
+
+---
+
+## 6. vNext: Cloud B站 Publishing (2026-06-28)
+
+### 6.1 Background
+
+Current bilibili_publisher.py calls B站 preupload API via httpx, returns 403 Forbidden.
+Root cause: B站 TLS fingerprint anti-bot detection. Pure Python HTTP client TLS fingerprint differs from browser.
+
+### 6.2 Technical Approach
+
+Use bilibili-api-python library (v17.4.2) with curl_cffi for browser TLS fingerprint impersonation.
+
+Key API endpoints:
+- preupload: https://member.bilibili.com/preupload (get upload config)
+- submit: https://member.bilibili.com/x/vu/web/add/v3 (submit video)
+- cover_up: https://member.bilibili.com/x/vu/web/cover/up (upload cover)
+
+preupload params: profile=ugcfx/bup, version=2.10.4, build=2100400, upcdn=bda2, probe_version=20211012
+Cookie format: dict (SESSDATA, buvid3, buvid4, bili_jct, DedeUserID), not Cookie header string
+Referer: https://www.bilibili.com
+
+### 6.3 Architecture Change
+
+- No longer requires local Multi-Publish for B站 publishing
+- orchestrator completes B站 upload flow directly on ECS
+- Story2Video publish settings UI retained, execution moved to server-side
+- Requires bilibili-api-python + curl_cffi in orchestrator venv
+
+### 6.4 Implementation Steps
+
+1. Install bilibili-api-python to orchestrator venv
+2. Rewrite bilibili_publisher.py using Credential + VideoUploader
+3. Read cookies from provider_configs table, construct Credential object
+4. Test preupload -> chunk upload -> submit full flow
+5. Handle cover upload (base64 -> B站 cover_up API)
+6. Update PRD and CHANGELOG
+
+### 6.5 Current Cookie Status
+
+- Platform: bilibili
+- Username: (DedeUserID: 294210842)
+- SESSDATA, bili_jct valid (nav API isLogin: true)
+- Storage: orchestrator.db provider_configs table
