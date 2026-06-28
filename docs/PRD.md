@@ -568,12 +568,14 @@ preupload params: profile=ugcfx/bup, version=2.10.4, build=2100400, upcdn=bda2, 
 Cookie format: dict (SESSDATA, buvid3, buvid4, bili_jct, DedeUserID), not Cookie header string
 Referer: https://www.bilibili.com
 
-### 6.3 Architecture Change
+### 6.3 Dual-Mode Architecture (Local RPA + Cloud API)
 
-- No longer requires local Multi-Publish for B站 publishing
-- orchestrator completes B站 upload flow directly on ECS
-- Story2Video publish settings UI retained, execution moved to server-side
-- Requires bilibili-api-python + curl_cffi in orchestrator venv
+Both publishing modes coexist, like 蚁小二:
+- **Local RPA** (current default, works now): Multi-Publish Electron app publishes via browser RPA
+- **Cloud API** (vNext): orchestrator publishes directly on ECS via bilibili-api-python
+
+Cloud publishing value: bypasses poor network connectivity to foreign platforms from user's local machine.
+Story2Video publish settings UI supports both modes.
 
 ### 6.4 Implementation Steps
 
