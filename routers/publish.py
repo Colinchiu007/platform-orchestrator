@@ -380,3 +380,78 @@ def _markdown_to_html(md: str) -> str:
         line = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", line)
         html_parts.append(f"<p>{line}</p>")
     return "\n".join(html_parts)
+
+
+# ─── Platform cookie management ──────────────────────────────────────────────
+
+
+class CookieItem(BaseModel):
+    name: str
+    value: str
+    domain: str = '.bilibili.com'
+    path: str = '/'
+
+
+class SaveCookiesRequest(BaseModel):
+    cookies: list[CookieItem]
+    username: str = ''
+
+
+@router.post('/cookies/{platform}')
+async def save_platform_cookies(
+    platform: str,
+    body: SaveCookiesRequest,
+    current_user: dict = Depends(get_current_user_or_api_key),
+    db=Depends(get_db),
+):
+    """Save platform login cookies (captured from browser login flow)."""
+    supported = ('bilibili', 'douyin')
+    if platform not in supported:
+        raise HTTPException(status_code=400, detail=f'Unsupported platform: {platform}')
+
+    row = await db.execute(
+        'SELECT id FROM provider_configs WHERE name = ?', (platform,)
+    )
+    existing = await row.fetchone()
+
+    config_data = {'cookies': [c.model_dump() for c in body.cookies], 'username': body.username}
+
+    if existing:
+        await db.execute(
+            'UPDATE provider_configs SET config = ?, updated_at = datetime("now") WHERE name = ?',
+            (json.dumps(config_data), platform),
+        )
+    else:
+        await db.execute(
+            'INSERT INTO provider_configs (id, name, provider_type, display_name, base_url, api_key_encrypted, config) '
+            'VALUES (?, ?, "publish", ?, "", "", ?)',
+            (platform, platform, platform.capitalize(), json.dumps(config_data)),
+        )
+    await db.commit()
+
+    return {'status': 'ok', 'platform': platform, 'cookie_count': len(body.cookies)}
+
+
+@router.get('/cookies/{platform}')
+async def get_platform_cookies(
+    platform: str,
+    current_user: dict = Depends(get_current_user_or_api_key),
+    db=Depends(get_db),
+):
+    """Check if platform cookies are configured."""
+    row = await db.execute(
+        'SELECT config, updated_at FROM provider_configs WHERE name = ?', (platform,)
+    )
+    result = await row.fetchone()
+    if not result:
+        return {'configured': False, 'platform': platform}
+
+    config = json.loads(result[0] or '{}')
+    cookies = config.get('cookies', [])
+    return {
+        'configured': len(cookies) > 0,
+        'platform': platform,
+        'cookie_count': len(cookies),
+        'username': config.get('username', ''),
+        'updated_at': result[1],
+    }
