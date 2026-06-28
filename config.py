@@ -56,7 +56,9 @@ class Settings(BaseSettings):
     api_key_user_id: str = "api-story2video"
 
     # ── Feature Gates ───────────────────────────────────────────────────
-    feature_gates_path: str = "D:/Data/projects/feature_gates.yaml"
+    # Default: local feature_gates.yaml in project root.
+    # Override via PO_FEATURE_GATES_PATH for CI or ECS (/srv/projects/feature_gates.yaml).
+    feature_gates_path: str = "feature_gates.yaml"
 
     # ── CORS ────────────────────────────────────────────────────────────
     cors_origins: list[str] = [

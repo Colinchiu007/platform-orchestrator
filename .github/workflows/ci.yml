@@ -10,6 +10,8 @@ jobs:
   test:
     name: 测试
     runs-on: ubuntu-latest
+    env:
+      PO_SECRET_KEY: ci-dummy-secret-for-testing
     steps:
       - uses: actions/checkout@v4
       - name: 设置 Python 3.12
