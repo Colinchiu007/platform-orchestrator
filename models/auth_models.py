@@ -15,7 +15,8 @@ Base = declarative_base()
 
 
 def _utcnow():
-    return datetime.now(timezone.utc)
+    """Return naive UTC datetime for DB columns defined as TIMESTAMP WITHOUT TIME ZONE."""
+    return datetime.utcnow()
 
 
 class AuthUser(Base):

@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     wechat_appid: str = ""
     wechat_appsecret: str = ""
 
+    # ── Integration API Key ────────────────────────────────────────────
+    # Used by Story2Video (and other internal services) to call
+    # orchestrator endpoints without full JWT auth.
+    api_key: str = ""
+    api_key_user_id: str = "api-story2video"
+
     # ── Feature Gates ───────────────────────────────────────────────────
     # Default: local feature_gates.yaml in project root.
     # Override via PO_FEATURE_GATES_PATH for CI or ECS (/srv/projects/feature_gates.yaml).
@@ -67,4 +73,11 @@ class Settings(BaseSettings):
     def _validate_secret_key(self):
         if not self.secret_key:
             raise ValueError(
-                "PO_SECRET_KEY environment variable is not set.
+                "PO_SECRET_KEY environment variable is not set. "
+                "Set a strong random key before starting the server."
+            )
+        return self
+
+
+# Module-level settings instance
+settings = Settings()

@@ -327,7 +327,9 @@ class ProviderRouter:
 
         return results
 
-    async def get_by_type(self, provider_type: str) -> list[dict]:
+    async def get_by_type(
+        self, provider_type: str, user_uuid: str = None,
+    ) -> list[dict]:
         """Get all providers of a given type (e.g. 'llm', 'tts', 'image')."""
         cursor = await self._db.execute(
             "SELECT * FROM provider_configs WHERE provider_type = ? ORDER BY name",
@@ -342,9 +344,64 @@ class ProviderRouter:
             d["models"] = json.loads(d.get("models", "[]"))
             d["config"] = json.loads(d.get("config", "{}"))
             d["enabled"] = bool(d["enabled"])
+
+            # User key override
+            if user_uuid:
+                user_key = await self._get_user_key(user_uuid, d["name"])
+                if user_key:
+                    d["api_key"] = user_key["api_key_encrypted"]
+                    if user_key.get("base_url"):
+                        d["base_url"] = user_key["base_url"]
+
             results.append(d)
 
         return results
+
+
+    # ── Load Balancing Methods ──────────────────────────────────────────
+
+    async def select_provider(
+        self,
+        provider_type: str,
+        strategy: str = "round_robin",
+        user_uuid: str = None,
+        circuit_breaker: Any = None,
+    ) -> Optional[dict]:
+        """Select a provider of a given type using the specified strategy.
+
+        Picks the next available (enabled) provider, skipping those with
+        open circuits (if circuit_breaker is provided).
+
+        Args:
+            provider_type: Type of provider to select (e.g. "llm", "tts").
+            strategy: Selection strategy -- currently only "round_robin".
+            user_uuid: Optional user UUID for key override.
+            circuit_breaker: Optional CircuitBreaker instance. Providers
+                             with open circuits are skipped.
+
+        Returns:
+            A provider config dict (with decrypted api_key), or None if
+            no provider is available.
+        """
+        providers = await self.get_by_type(provider_type, user_uuid=user_uuid)
+
+        # Filter enabled + circuit-open
+        available = []
+        for p in providers:
+            if not p.get("enabled", True):
+                continue
+            if circuit_breaker and not circuit_breaker.is_available(p["name"]):
+                continue
+            available.append(p)
+
+        if not available:
+            return None
+
+        if strategy == "round_robin":
+            idx = _ROUND_ROBIN.next(provider_type, len(available))
+            return available[idx % len(available)]
+
+        return available[0]  # fallback: first
 
     # ── User API Key Methods ────────────────────────────────────────────
 
@@ -413,6 +470,105 @@ class ProviderRouter:
         )
         row = await cursor.fetchone()
         return row[0] if row else None
+
+    # ── Registry Integration Methods ───────────────────────────────────
+
+    async def create_from_spec(self, name: str) -> Optional[dict]:
+        """Create a provider config from the ProviderRegistry by name.
+
+        Looks up the spec in the registry and creates a DB entry if
+        one doesn't already exist.
+        """
+        from providers.registry import ProviderRegistry
+
+        spec = ProviderRegistry.get(name)
+        if spec is None:
+            return None
+
+        # Check if already exists
+        existing = await self.get(name)
+        if existing:
+            return existing
+
+        return await self.create({
+            "name": spec.name,
+            "provider_type": spec.provider_type,
+            "display_name": spec.display_name or spec.name,
+            "base_url": spec.base_url,
+            "api_key": spec.api_key_from_env or "",
+            "models": spec.models,
+            "config": spec.config,
+            "enabled": True,
+            "min_tier": spec.default_tier,
+        })
+
+    async def match_model(self, model_name: str) -> Optional[dict]:
+        """Find the provider config that matches a model name via prefix.
+
+        Uses ProviderRegistry to find the matching provider spec, then
+        looks up the DB config.
+        """
+        from providers.registry import ProviderRegistry
+
+        spec = ProviderRegistry.match_model(model_name)
+        if spec is None:
+            return None
+
+        return await self.get(spec.name)
+
+    async def list_by_type(self, provider_type: str) -> list[dict]:
+        """List all provider configs of a given type.
+
+        Uses ProviderRegistry to get providers by type, then looks up
+        each one in the DB config.
+        """
+        from providers.registry import ProviderRegistry
+
+        specs = ProviderRegistry.list_by_type(provider_type)
+        results = []
+        for spec in specs:
+            config = await self.get(spec.name)
+            if config:
+                results.append(config)
+        return results
+
+
+# ── Load Balancing ─────────────────────────────────────────────────────────
+
+
+class RoundRobinState:
+    """Per-provider-type round-robin selection state.
+
+    Thread-safe for async use -- each call to next() atomically advances
+    the counter for the given provider type.
+
+    Usage:
+        state = RoundRobinState()
+        idx = state.next("llm", count=3)   # Returns 0, 1, 2, 0, 1, 2, ...
+        idx = state.next("image", count=2)  # Independent counter per type
+    """
+
+    def __init__(self) -> None:
+        self._index: dict[str, int] = {}
+
+    def next(self, provider_type: str, count: int) -> int:
+        """Get the next index in the round-robin sequence for a provider type.
+
+        Args:
+            provider_type: The type of provider (e.g. "llm", "tts").
+            count: Total number of providers of this type.
+
+        Returns:
+            The next index (0 to count-1) for this provider type.
+        """
+        idx = self._index.get(provider_type, 0)
+        next_idx = (idx + 1) % count if count > 0 else 0
+        self._index[provider_type] = next_idx
+        return idx  # Return current, advance for next call
+
+
+_ROUND_ROBIN = RoundRobinState()
+
 
 
 # ── Singleton ─────────────────────────────────────────────────────────────

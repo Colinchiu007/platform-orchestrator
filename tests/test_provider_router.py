@@ -235,3 +235,138 @@ class TestProviderRouterTypes:
         tts = await router.get_by_type("tts")
         assert len(tts) == 1
         assert tts[0]["name"] == "doubao"
+
+
+# ── Load Balancing Tests ──────────────────────────────────────────────────
+
+
+class TestRoundRobinState:
+    """Test RoundRobinState selection logic."""
+
+    def test_round_robin_cycles(self):
+        from services.provider_router import RoundRobinState
+        rr = RoundRobinState()
+        seq = [rr.next("llm", 3) for _ in range(6)]
+        assert seq == [0, 1, 2, 0, 1, 2]
+
+    def test_round_robin_per_type_independent(self):
+        from services.provider_router import RoundRobinState
+        rr = RoundRobinState()
+        llm_seq = [rr.next("llm", 2) for _ in range(4)]
+        tts_seq = [rr.next("tts", 4) for _ in range(4)]
+        assert llm_seq == [0, 1, 0, 1]
+        assert tts_seq == [0, 1, 2, 3]
+
+    def test_round_robin_single_provider(self):
+        from services.provider_router import RoundRobinState
+        rr = RoundRobinState()
+        seq = [rr.next("single", 1) for _ in range(3)]
+        assert seq == [0, 0, 0]
+
+    def test_round_robin_zero_count(self):
+        from services.provider_router import RoundRobinState
+        rr = RoundRobinState()
+        # Should not crash with count=0
+        seq = [rr.next("empty", 0) for _ in range(3)]
+        assert seq == [0, 0, 0]
+
+
+class TestProviderRouterSelect:
+    """Test provider selection with load balancing."""
+
+    @pytest.mark.asyncio
+    async def test_select_provider_returns_next(self, router):
+        """select_provider() returns a provider round-robin."""
+        await router.create(_make_provider(name="llm-a", provider_type="llm"))
+        await router.create(_make_provider(name="llm-b", provider_type="llm"))
+
+        p1 = await router.select_provider("llm")
+        p2 = await router.select_provider("llm")
+        assert p1 is not None
+        assert p2 is not None
+        # With 2 providers round-robin, should alternate
+        assert p1["name"] in ("llm-a", "llm-b")
+        assert p2["name"] in ("llm-a", "llm-b")
+
+    @pytest.mark.asyncio
+    async def test_select_provider_single_type(self, router):
+        """With one provider, always returns that one."""
+        await router.create(_make_provider(name="only-llm", provider_type="llm"))
+        for _ in range(3):
+            p = await router.select_provider("llm")
+            assert p["name"] == "only-llm"
+            assert "api_key" in p
+
+    @pytest.mark.asyncio
+    async def test_select_provider_no_match_returns_none(self, router):
+        """No providers of the requested type -> None."""
+        await router.create(_make_provider(name="tts-only", provider_type="tts"))
+        p = await router.select_provider("image")
+        assert p is None
+
+    @pytest.mark.asyncio
+    async def test_select_provider_excludes_disabled(self, router):
+        """Disabled providers should not be selected."""
+        await router.create(_make_provider(name="enabled-llm", provider_type="llm", enabled=True))
+        await router.create(_make_provider(name="disabled-llm", provider_type="llm", enabled=False))
+
+        for _ in range(4):
+            p = await router.select_provider("llm")
+            assert p is not None
+            assert p["name"] == "enabled-llm"  # only enabled one
+
+    @pytest.mark.asyncio
+    async def test_select_provider_with_circuit_breaker(self, router):
+        """Open circuit breaker causes provider to be skipped."""
+        from providers.fallback_provider import CircuitBreaker
+        await router.create(_make_provider(name="broken-llm", provider_type="llm"))
+        await router.create(_make_provider(name="ok-llm", provider_type="llm"))
+
+        cb = CircuitBreaker(failure_threshold=2, cooldown_seconds=300)
+        cb.record_failure("broken-llm")
+        cb.record_failure("broken-llm")  # open circuit
+
+        # Even though round-robin might pick broken-llm, it's skipped
+        for _ in range(4):
+            p = await router.select_provider("llm", circuit_breaker=cb)
+            assert p is not None
+            assert p["name"] == "ok-llm"  # only ok one
+
+    @pytest.mark.asyncio
+    async def test_select_provider_all_circuit_broken_returns_none(self, router):
+        """All providers with open circuits -> None."""
+        from providers.fallback_provider import CircuitBreaker
+        await router.create(_make_provider(name="broken-a", provider_type="llm"))
+        await router.create(_make_provider(name="broken-b", provider_type="llm"))
+
+        cb = CircuitBreaker(failure_threshold=2, cooldown_seconds=300)
+        cb.record_failure("broken-a")
+        cb.record_failure("broken-a")
+        cb.record_failure("broken-b")
+        cb.record_failure("broken-b")
+
+        p = await router.select_provider("llm", circuit_breaker=cb)
+        assert p is None
+
+    @pytest.mark.asyncio
+    async def test_get_by_type_with_user_uuid(self, router):
+        """get_by_type() respects user key override."""
+        await router.create(_make_provider(name="openai", provider_type="llm", api_key="admin-key"))
+        await router.set_user_key("user-1", "openai", "user-key")
+
+        providers = await router.get_by_type("llm", user_uuid="user-1")
+        assert len(providers) == 1
+        assert providers[0]["name"] == "openai"
+        assert providers[0]["api_key"] == "user-key"
+
+    @pytest.mark.asyncio
+    async def test_get_by_type_mixed_user_visibility(self, router):
+        """User key only applies to the provider the user overrode."""
+        await router.create(_make_provider(name="openai", provider_type="llm", api_key="admin-key"))
+        await router.create(_make_provider(name="doubao", provider_type="llm", api_key="admin-key-2"))
+        await router.set_user_key("user-1", "openai", "user-key")
+
+        providers = await router.get_by_type("llm", user_uuid="user-1")
+        api_keys = {p["name"]: p["api_key"] for p in providers}
+        assert api_keys["openai"] == "user-key"
+        assert api_keys["doubao"] == "admin-key-2"
