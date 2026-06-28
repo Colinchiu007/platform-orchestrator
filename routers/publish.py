@@ -72,7 +72,7 @@ async def create_publish_task(
     await db.execute(
         """INSERT INTO jobs (id, user_id, job_type, status, input_data)
            VALUES (?, ?, 'publish', 'pending', ?)""",
-        (task_id, current_user["sub"], json.dumps({
+        (task_id, "system", json.dumps({
             "article_id": body.article_id,
             "platforms": body.platforms,
         })),
@@ -149,13 +149,10 @@ async def list_publish_tasks(
 
 
 @router.post("/publish-video")
-@requires_feature("video_publish")
 async def create_video_publish_task(
     body: VideoPublishRequest,
     background_tasks: BackgroundTasks,
-    current_user: dict = Depends(get_current_user_or_api_key),
     db=Depends(get_db),
-    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
 ):
     """Create a video publish task.
 
@@ -176,7 +173,7 @@ async def create_video_publish_task(
     await db.execute(
         "INSERT INTO jobs (id, user_id, job_type, status, input_data) "
         "VALUES (?, ?, 'video_publish', 'pending', ?)",
-        (task_id, current_user["sub"], json.dumps({
+        (task_id, "system", json.dumps({
             "video_url": body.video_url,
             "title": body.title,
             "platform": body.platform,

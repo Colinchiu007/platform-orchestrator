@@ -46,3 +46,7 @@ features:
   video_full_pipeline:
     enabled: false
     tier: 3
+  video_publish:
+    description: Video publish to B站/Douyin via bilibili_publisher
+    enabled: true
+    tier: 1

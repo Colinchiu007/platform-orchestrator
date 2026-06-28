@@ -87,31 +87,47 @@ def _cookies_to_header(cookies: list[dict]) -> str:
 
 
 async def _get_bilibili_cookies() -> tuple[list[dict], str]:
-    """Load B站 cookies from ProviderRouter.
+    """Load B cookies from ProviderRouter or directly from DB."""
+    import aiosqlite
 
-    Returns:
-        (cookies_list, cookie_header_string)
+    cfg = None
+    try:
+        router = get_router()
+        if router._db is not None:
+            cfg = await router.get("bilibili")
+    except Exception:
+        pass
 
-    Raises:
-        ValueError: if no bilibili provider is configured.
-    """
-    router = get_router()
-    cfg = await router.get("bilibili")
+    if cfg is None:
+        try:
+            db = await aiosqlite.connect("orchestrator.db")
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT config FROM provider_configs WHERE name = ?", ("bilibili",)
+            )
+            row = await cursor.fetchone()
+            if row:
+                config_data = json.loads(row["config"])
+                cfg = {"config": config_data}
+            await db.close()
+        except Exception as e:
+            raise ValueError(f"Failed to read bilibili cookies from DB: {e}")
+
     if not cfg:
         raise ValueError(
-            "B站 provider not configured. "
-            "Add 'bilibili' provider via admin panel "
-            "with SESSDATA stored in config.cookies."
+            "B provider not configured. "
+            "Add bilibili provider with SESSDATA in config.cookies."
         )
+
     cookies = cfg.get("config", {}).get("cookies", [])
     if not cookies:
-        # Fallback: api_key might be the cookie string itself
         raw = cfg.get("api_key", "")
         if raw:
             cookies = [_parse_cookie_line(raw)]
     if not cookies:
-        raise ValueError("B站 SESSDATA not configured.")
+        raise ValueError("B SESSDATA not configured.")
     return cookies, _cookies_to_header(cookies)
+
 
 
 def _parse_cookie_line(raw: str) -> dict:
