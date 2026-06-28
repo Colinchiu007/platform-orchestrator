@@ -398,6 +398,7 @@ class SaveCookiesRequest(BaseModel):
 async def save_platform_cookies(
     platform: str,
     body: SaveCookiesRequest,
+
     db=Depends(get_db),
 ):
     """Save platform login cookies (captured from browser login flow)."""
@@ -431,6 +432,7 @@ async def save_platform_cookies(
 @router.get('/cookies/{platform}')
 async def get_platform_cookies(
     platform: str,
+
     db=Depends(get_db),
 ):
     """Check if platform cookies are configured."""
