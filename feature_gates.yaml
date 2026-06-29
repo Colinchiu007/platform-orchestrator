@@ -44,5 +44,10 @@ features:
     enabled: true
     tier: 2
   video_full_pipeline:
-    enabled: false
-    tier: 3
+    enabled: true
+    tier: 2
+    description: 全量内容→视频管线（Block Graph 引擎，Phase 2 默认启用）
+  video_publish:
+    description: Video publish to B站/Douyin via publish.py endpoints
+    enabled: true
+    tier: 1
