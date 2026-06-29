@@ -258,3 +258,59 @@ async def run_block_pipeline(
     engine = ExecutionEngine()
     result = await engine.run(graph, context, retry_policy)
     return result
+
+
+# ── 向后兼容别名 ─────────────────────────────────────────────────────────────
+
+
+async def run_pipeline_v2(
+    job_id: str,
+    article_id: str,
+    split_json: dict,
+    image_effect: str,
+    transition: str,
+    voice_id: str,
+    image_provider: str,
+) -> None:
+    """Legacy signature — used by routers/video.py before Phase 2.
+
+    This function provides backward compatibility with the old v1 signature.
+    In Phase 2, the pipeline is built and run via ``run_block_pipeline()``,
+    but callers using the old signature (``routers/video.py``) continue to work.
+
+    Args are accepted for compatibility; the actual pipeline reads its config
+    from the jobs table via ``run_block_pipeline(db_path, job_id, content)``.
+    """
+    from services.pipeline_v2 import run_block_pipeline
+    from db import get_db_path
+
+    # Read content and config from jobs table
+    db_path = get_db_path() if callable(get_db_path) else "/srv/projects/platform-orchestrator/data.db"
+    db_path = db_path or "/srv/projects/platform-orchestrator/data.db"
+
+    import aiosqlite, json
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT input_data, content FROM jobs WHERE id = ?", (job_id,)
+        )
+        row = await cursor.fetchone()
+
+    if not row:
+        logger.error("run_pipeline_v2: job %s not found", job_id)
+        return
+
+    content = row["content"] or ""
+    cfg = json.loads(row["input_data"]) if row["input_data"] else {}
+
+    result = await run_block_pipeline(
+        db_path=db_path,
+        job_id=job_id,
+        content=content,
+        voice=cfg.get("voice", "zh-CN-XiaoxiaoNeural"),
+        prompt_platform=cfg.get("prompt_platform", "midjourney"),
+        video_ratio=cfg.get("video_ratio", "9:16"),
+    )
+
+    if not result.success:
+        logger.error("run_pipeline_v2 failed for job %s: %s", job_id, result.node_errors)

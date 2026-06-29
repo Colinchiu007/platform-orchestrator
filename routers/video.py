@@ -101,6 +101,7 @@ class CreateStory2VideoRequest(BaseModel):
 
 
 @router.post("/video")
+@requires_feature("video_full_pipeline")
 @requires_feature("video_fixed_template")
 @limiter.limit(rate_limit_video)
 async def create_video_job(
@@ -267,6 +268,7 @@ async def list_video_jobs(
 
 
 @router.post("/story2video")
+@requires_feature("video_full_pipeline")
 @requires_feature("video_fixed_template")
 async def create_story2video_job(
     request: Request,
