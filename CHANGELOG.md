@@ -1,3 +1,13 @@
+## [0.6.3] - 2026-06-29
+
+### Added
+
+- **POST /api/v1/aggregator/batch-generate**: Batch video generation endpoint
+  - Accepts 1-20 article_ids, creates N job records + dispatches N BackgroundTasks
+  - Protected by `batch_operations` feature gate
+  - Returns `{results: [{job_id, article_id, status}], total, missing}`
+  - 7 tests covering auth, single/multiple, partial/all missing, empty/max validations
+
 ## [0.6.2] - 2026-06-29
 
 ### Added
