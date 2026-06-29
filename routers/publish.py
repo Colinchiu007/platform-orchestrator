@@ -5,6 +5,7 @@ Endpoints:
 - POST  /api/jobs/publish-video — create video publish task (B站, 抖音, etc.)
 - GET   /api/jobs/publish/{id} — get publish status
 - GET   /api/jobs/publish/ — list publish tasks
+- POST  /api/jobs/cookies/{platform} — receive cookies from desktop client
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from pydantic import BaseModel, Field
 from db import get_db
 from middleware.auth import get_current_user, get_current_user_or_api_key
 from middleware.feature_gate import requires_feature
+from services.provider_router import get_router
 
 router = APIRouter()
 
@@ -95,6 +97,36 @@ async def create_publish_task(
         "platforms": body.platforms,
         "message": "Publish task created",
     }
+
+
+@router.get("/publish/pending")
+async def get_pending_publish_tasks(
+    db=Depends(get_db),
+):
+    """Get pending video_publish tasks (FIFO order).
+
+    Internal API for Multi-Publish PublishPoller polling.
+    No auth required — used by desktop app to poll for pending cloud publish tasks.
+    """
+    async with db.execute(
+        """SELECT id, user_id, job_type, status, input_data, created_at, updated_at
+           FROM jobs WHERE job_type = 'video_publish' AND status = 'pending'
+           ORDER BY created_at ASC"""
+    ) as cursor:
+        rows = await cursor.fetchall()
+
+    items = []
+    for r in rows:
+        item = dict(r)
+        try:
+            item["input_data"] = json.loads(item.get("input_data") or "{}")
+        except (json.JSONDecodeError, TypeError):
+            item["input_data"] = {}
+        items.append(item)
+
+    return {"items": items}
+
+
 
 
 @router.get("/publish/{task_id}")
@@ -204,6 +236,66 @@ async def create_video_publish_task(
         "platform": body.platform,
         "title": body.title,
         "message": "Video publish task created",
+    }
+
+
+@router.post("/cookies/{platform}")
+async def push_platform_cookies(
+    platform: str,
+    body: dict,
+    current_user: dict = Depends(get_current_user_or_api_key),
+):
+    """Push login cookies from desktop client to orchestrator storage.
+
+    Called by Multi-Publish desktop app after B站/抖音 login completes.
+    Cookies are stored in the provider_configs table under config.cookies
+    and picked up by publish services (douyin_publisher, bilibili_publisher).
+
+    Auth: JWT Bearer token or X-API-Key header (ORCHESTRATOR_API_KEY in desktop env).
+    """
+    supported = ("douyin", "bilibili")
+    if platform not in supported:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported platform '{platform}'. Supported: {', '.join(supported)}",
+        )
+
+    cookies = body.get("cookies", [])
+    if not cookies:
+        raise HTTPException(status_code=400, detail="No cookies provided")
+
+    router = get_router()
+    cfg = await router.get(platform)
+
+    provider_data = {
+        "config": {"cookies": cookies},
+    }
+
+    if cfg:
+        await router.update(platform, provider_data)
+    else:
+        display_names = {"douyin": "抖音", "bilibili": "B站"}
+        base_urls = {
+            "douyin": "https://creator.douyin.com",
+            "bilibili": "https://member.bilibili.com",
+        }
+        await router.create({
+            "name": platform,
+            "provider_type": "platform",
+            "display_name": display_names.get(platform, platform),
+            "base_url": base_urls.get(platform, f"https://{platform}.com"),
+            "api_key": platform,
+            "config": {"cookies": cookies},
+            "enabled": True,
+            "min_tier": 1,
+        })
+
+    username = body.get("username", "")
+    return {
+        "status": "ok",
+        "platform": platform,
+        "username": username,
+        "cookie_count": len(cookies),
     }
 
 
