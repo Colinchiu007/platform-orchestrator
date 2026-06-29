@@ -1,3 +1,25 @@
+## [0.6.1] - 2026-06-29
+
+### Added
+- Cookie push endpoint: `POST /api/jobs/cookies/{platform}` for Multi-Publish Desktop
+- 6 cookie push tests covering create/update/error/auth cases
+
+### Fixed
+- `get_current_user_or_api_key` in auth.py — X-API-Key header now properly extracted via `Header(None, alias="X-API-Key")`
+- `.gitignore` — literal `\n` in test.db entries fixed to actual newlines
+
+## [0.6.0] - 2026-06-29
+
+### Added
+- Unified jobs API: `GET /api/jobs/`, `GET /api/jobs/{id}`, `POST /api/jobs/{id}/retry`
+- User settings API: `GET/PATCH /api/settings/profile`, `CRUD /api/settings/api-keys`
+- API key management: hashed storage + last-used tracking
+- 26 new tests (21 API alignment + 5 video pipeline fixes)
+
+### Fixed
+- video.py missing QuotaExceededError import
+- Test isolation: add user_daily_usage to clean_tables fixture
+
 # Changelog
 
 ## [0.5.2] - 2026-06-27
