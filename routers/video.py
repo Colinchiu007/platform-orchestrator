@@ -356,142 +356,25 @@ async def _run_video_pipeline(
     voice_id: str,
     image_provider: str,
 ):
-    """Background task: run the full TTS → image gen → compositing pipeline.
+    """Background task: run the full pipeline via Block engine (pipeline_v2).
 
-    Gates to new Block engine (pipeline_v2) when the feature gate is enabled.
-    Falls back to the original inline implementation otherwise.
+    pipeline_v2 feature gate is permanently enabled. The original inline
+    v1 implementation was removed in feat/optimize-6-items.
     """
-    from middleware.feature_gate import load_feature_gates
-
-    gates = load_feature_gates()
-    use_v2 = gates.get("pipeline_v2", {}).get("enabled", False)
-
-    if use_v2:
-        from services.pipeline_v2 import run_pipeline_v2
-
-        try:
-            await run_pipeline_v2(
-                job_id=job_id,
-                article_id=article_id,
-                split_json=split_json,
-                image_effect=image_effect,
-                transition=transition,
-                voice_id=voice_id,
-                image_provider=image_provider,
-            )
-        except Exception as e:
-            # run_pipeline_v2 已写 DB
-            logger.error("Pipeline v2 failed: job=%s error=%s", job_id, e)
-        return
-
-    # ── 旧管线（pipeline_v2 关闭时兜底） ───────────────────────────────────
-    import aiosqlite
-    from services.tts_service import text_to_speech
-    from prompt_engine.services import optimize_prompts_batch
-    from services.image_service import generate_images_batch, ImageProvider
-    from video_compositor import compose_video, CompositorInput, SubtitleSegment
-
-    async def _update(status: str, output: dict = None, error: str = None):
-        db = await aiosqlite.connect("orchestrator.db")
-        await db.execute("PRAGMA journal_mode=WAL;")
-        sql = (
-            "UPDATE jobs SET status = ?, output_data = ?, error = ?, "
-            "updated_at = datetime('now') WHERE id = ?"
-        )
-        await db.execute(sql, (status, json.dumps(output or {}), error, job_id),)
-        await db.commit()
-        await db.close()
+    from services.pipeline_v2 import run_pipeline_v2
 
     try:
-        scenes = split_json.get("scenes", [])
-        if not scenes:
-            await _update("failed", error="No scenes in split result")
-            return
-
-        # ── 1. TTS: Generate audio from full article text ───────────────
-        await _update("generating_audio", {"progress": 0.1})
-
-        full_text = " ".join(s.get("text", "") for s in scenes)
-        tts_result = await text_to_speech(text=full_text, voice_id=voice_id)
-
-        if tts_result.error:
-            await _update("failed", error=f"TTS failed: {tts_result.error}")
-            return
-
-        # ── 2. Prompt optimization ──────────────────────────────────────
-        await _update("generating_images", {"progress": 0.3})
-
-        scene_texts = [s.get("text", "") for s in scenes]
-        prompt_result = await optimize_prompts_batch(
-            [{"text": t} for t in scene_texts]
-        )
-
-        optimized_prompts = (
-            prompt_result.prompts if not prompt_result.error else scene_texts
-        )
-        if len(optimized_prompts) < len(scene_texts):
-            optimized_prompts += scene_texts[len(optimized_prompts):]
-
-        # ── 3. Image generation ─────────────────────────────────────────
-        valid_providers = [p.value for p in ImageProvider]
-        provider = (
-            ImageProvider(image_provider)
-            if image_provider in valid_providers
-            else ImageProvider.MINIMAX
-        )
-
-        image_results = await generate_images_batch(
-            prompts=optimized_prompts,
-            provider=provider,
-        )
-
-        image_paths = [r.local_path for r in image_results if r.local_path]
-        if not image_paths:
-            await _update("failed", error="All image generations failed")
-            return
-
-        await _update("compositing", {
-            "progress": 0.7, "images_generated": len(image_paths),
-        })
-
-        # ── 4. Build subtitle segments from split result ────────────────
-        subtitle_segments = []
-        for scene in scenes:
-            for sub in scene.get("subtitles", []):
-                subtitle_segments.append(SubtitleSegment(
-                    text=sub.get("text", ""),
-                    start_time=sub.get("start_time", 0),
-                    end_time=sub.get("start_time", 0) + sub.get("duration", 2),
-                ))
-
-        # ── 5. Compositing ──────────────────────────────────────────────
-        output_path = f"output/videos/{job_id}.mp4"
-
-        composit_result = compose_video(CompositorInput(
-            images=image_paths,
-            audio_path=tts_result.audio_path,
-            output_path=output_path,
+        await run_pipeline_v2(
+            job_id=job_id,
+            article_id=article_id,
+            split_json=split_json,
             image_effect=image_effect,
             transition=transition,
-            subtitles=subtitle_segments,
-        ))
-
-        if not composit_result.success:
-            await _update(
-                "failed", error=f"Compositing failed: {composit_result.error}"
-            )
-            return
-
-        await _update("done", {
-            "progress": 1.0,
-            "output_path": output_path,
-            "duration": composit_result.duration_seconds,
-            "scenes": len(scenes),
-            "images_generated": len(image_paths),
-        })
-
+            voice_id=voice_id,
+            image_provider=image_provider,
+        )
     except Exception as e:
-        await _update("failed", error=str(e))
+        logger.error("Pipeline v2 failed: job=%s error=%s", job_id, e)
 
 
 # ── Story2Video Background Task ─────────────────────────────────────────────

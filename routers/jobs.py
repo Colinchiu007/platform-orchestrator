@@ -29,7 +29,7 @@ async def list_all_jobs(
     """List all jobs (video, publish, video_publish, story2video) for current user.
     
     Returns combined list of all job types, newest first, up to 50 items.
-    Used by unified-frontend /api/jobs endpoint.
+    Used by unified-frontend /api/jobs/ endpoint.
     """
     async with db.execute(
         """SELECT id, job_type, status, created_at, updated_at, input_data
@@ -51,7 +51,7 @@ async def list_all_jobs(
     return {"items": items, "total": len(items)}
 
 
-@router.get("/{job_id}")
+@router.get("/detail/{job_id}")
 async def get_job_detail(
     job_id: str,
     current_user: dict = Depends(get_current_user),
@@ -85,7 +85,7 @@ async def get_job_detail(
     }
 
 
-@router.post("/{job_id}/retry")
+@router.post("/detail/{job_id}/retry")
 async def retry_job(
     job_id: str,
     current_user: dict = Depends(get_current_user),

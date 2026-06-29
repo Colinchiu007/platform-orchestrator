@@ -2,8 +2,8 @@
 
 Tests:
 - GET    /api/jobs/ — list all jobs
-- GET    /api/jobs/{job_id} — job detail
-- POST   /api/jobs/{job_id}/retry — retry failed job
+- GET    /api/jobs/detail/{job_id} — job detail
+- POST   /api/jobs/detail/{job_id}/retry — retry failed job
 - GET    /api/settings/profile — user profile
 - PATCH  /api/settings/profile — update profile
 - GET    /api/settings/api-keys — list API keys
@@ -206,11 +206,11 @@ class TestJobsList:
 class TestJobDetail:
     def test_get_job_not_found(self):
         auth = _register_unique("jd_404")
-        resp = client.get("/api/jobs/nonexistent-job-id", headers=auth)
+        resp = client.get("/api/jobs/detail/nonexistent-job-id", headers=auth)
         assert resp.status_code == 404
 
     def test_get_job_unauthorized(self):
-        resp = client.get("/api/jobs/some-id")
+        resp = client.get("/api/jobs/detail/some-id")
         assert resp.status_code == 401
 
 
@@ -219,11 +219,11 @@ class TestJobRetry:
         return _get_shared_auth()
 
     def test_retry_no_job(self):
-        resp = client.post("/api/jobs/nonexistent/retry", headers=self._auth())
+        resp = client.post("/api/jobs/detail/nonexistent/retry", headers=self._auth())
         assert resp.status_code == 404
 
     def test_retry_unauthorized(self):
-        resp = client.post("/api/jobs/some-id/retry")
+        resp = client.post("/api/jobs/detail/some-id/retry")
         assert resp.status_code == 401
 
     def test_retry_job_success(self):
@@ -248,7 +248,7 @@ class TestJobRetry:
             await db.close()
         asyncio.run(_setup())
 
-        resp = client.post(f"/api/jobs/{job_id}/retry", headers=auth)
+        resp = client.post(f"/api/jobs/detail/{job_id}/retry", headers=auth)
         assert resp.status_code == 200
         assert resp.json()["status"] == "pending"
 
@@ -283,7 +283,7 @@ class TestJobRetry:
             await db.close()
         asyncio.run(_setup())
 
-        resp = client.post(f"/api/jobs/{job_id}/retry", headers=auth)
+        resp = client.post(f"/api/jobs/detail/{job_id}/retry", headers=auth)
         assert resp.status_code == 400
 
 
@@ -321,7 +321,7 @@ class TestJobsWithRealJob:
         assert data["total"] >= 1
 
         # Detail
-        resp = client.get(f"/api/jobs/{jid}", headers=auth)
+        resp = client.get(f"/api/jobs/detail/{jid}", headers=auth)
         assert resp.status_code == 200
         detail = resp.json()
         assert detail["id"] == jid
@@ -331,7 +331,7 @@ class TestJobsWithRealJob:
 
         # Wrong user gets 404
         other = _register_unique("other")
-        resp = client.get(f"/api/jobs/{jid}", headers=other)
+        resp = client.get(f"/api/jobs/detail/{jid}", headers=other)
         assert resp.status_code == 404
 
     def test_jobs_list_mixed_types(self):
