@@ -115,7 +115,9 @@ async def test_queue_full_rejects():
     await controller.submit("j-running", _long_task)
     await asyncio.sleep(0.01)
 
-    # Fill the queue
+    # Fill the queue (set maxsize to 2 so 3rd submit is rejected)
+    controller.max_queue_size = 2
+
     async def _noop():
         pass
 
