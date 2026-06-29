@@ -4,6 +4,6 @@ Each module gets its own router file. In Phase 0 these are stubs.
 Module integration happens in Phases 1-3.
 """
 
-from routers import aggregator, prompt, publish, splitter, video
+from routers import aggregator, jobs, prompt, publish, user_settings, splitter, video
 
-__all__ = ["aggregator", "splitter", "prompt", "video", "publish"]
+__all__ = ["aggregator", "splitter", "prompt", "video", "publish", "jobs", "user_settings"]

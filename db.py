@@ -123,4 +123,15 @@ async def init_db() -> None:
                 updated_at TEXT DEFAULT (datetime('now'))
             )
         """)
+
+        await db.execute("""CREATE TABLE IF NOT EXISTS api_keys (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            label TEXT NOT NULL,
+            key_hash TEXT NOT NULL,
+            key_preview TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now')),
+            last_used_at TEXT
+        )""")
+
         await db.commit()

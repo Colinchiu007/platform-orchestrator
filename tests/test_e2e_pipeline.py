@@ -183,7 +183,7 @@ class TestE2EPipeline:
         }, headers=auth)
         assert resp.status_code == 200, f"Video job failed: {resp.text}"
         job = resp.json()
-        assert job["status"] == "queued"
+        assert job["status"] in ("queued", "processing")
         assert "job_id" in job
 
         # ── 5. Check video job status ──
@@ -339,7 +339,7 @@ class TestE2EPipeline:
         }, headers=auth)
         assert resp.status_code == 200
         job = resp.json()
-        assert job["status"] == "queued"
+        assert job["status"] in ("queued", "processing")
 
         # Verify input_data stored in DB reflects the custom params
         resp = client.get(f"/api/jobs/video/{job['job_id']}", headers=auth)

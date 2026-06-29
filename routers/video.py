@@ -27,6 +27,7 @@ from middleware.auth import get_current_user
 from middleware.feature_gate import load_feature_gates, requires_feature
 from middleware.rate_limit import limiter, rate_limit_video
 from services.concurrency_control import video_concurrency
+from services.quota import increment_usage, QuotaExceededError
 
 logger = logging.getLogger(__name__)
 
