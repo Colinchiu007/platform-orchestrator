@@ -25,3 +25,4 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
+test.db\ntest_auth.db
