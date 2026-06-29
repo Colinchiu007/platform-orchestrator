@@ -51,3 +51,15 @@ features:
     description: Video publish to B站/Douyin via publish.py endpoints
     enabled: true
     tier: 1
+  file_upload:
+    description: Enable file upload for content import (.txt/.md)
+    enabled: true
+    tier: 1
+  batch_operations:
+    description: Enable batch delete and batch generate operations
+    enabled: true
+    tier: 1
+  data_export:
+    description: Enable CSV/JSON export for articles and jobs
+    enabled: true
+    tier: 1

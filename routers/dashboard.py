@@ -6,14 +6,16 @@ endpoints only query orchestrator-local state + pip-installed modules.
 """
 
 from __future__ import annotations
+import uuid
 
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel, Field
 
 from db import DB_PATH, get_db
 from middleware.auth import get_current_user
+from middleware.feature_gate import requires_feature
 from services.pipeline import run_pipeline
 
 router = APIRouter(prefix="/api/v1/aggregator", tags=["aggregator"])
@@ -157,7 +159,6 @@ async def generate_pipeline(
 
     # 2. Create job record
     import json
-    import uuid
     job_id = str(uuid.uuid4())
     input_data = json.dumps({
         "article_id": body.article_id,
@@ -181,3 +182,48 @@ async def generate_pipeline(
     )
 
     return {"job_id": job_id, "status": "pending"}
+
+
+@router.post("/upload")
+@requires_feature("file_upload")
+async def upload_article_file(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Upload a text/markdown file as new article content.
+    
+    Supported formats: .txt, .md
+    The file content is stored as a new article in 'draft' status,
+    making it available for video generation in the Generate page.
+    """
+    # Validate file type
+    if not file.filename or not any(file.filename.lower().endswith(ext) for ext in (".txt", ".md", ".markdown")):
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file type. Please upload a .txt or .md file.",
+        )
+    
+    # Read file content
+    raw = await file.read()
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        text = raw.decode("utf-8", errors="replace")
+    
+    article_id = str(uuid.uuid4())
+    word_count = len(text)
+    
+    await db.execute(
+        """INSERT INTO articles (id, user_id, source_type, source_url, source_content, word_count_original, status)
+           VALUES (?, ?, 'upload', ?, ?, ?, 'draft')""",
+        (article_id, current_user["sub"], file.filename or "upload", text, word_count),
+    )
+    await db.commit()
+    
+    return {
+        "article_id": article_id,
+        "filename": file.filename or "untitled",
+        "word_count": word_count,
+        "status": "draft",
+    }
