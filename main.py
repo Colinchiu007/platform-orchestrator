@@ -19,7 +19,7 @@ from db_pg import init_pg_db
 from middleware.rate_limit import setup_rate_limiting
 from routers import aggregator, auth, dashboard, payment, prompt, publish, splitter, trending, video, web
 from routers import provider_admin, provider_user, usage, viral
-from routers import admin_users
+from routers import admin_users, jobs, user_settings
 from services.provider_router import get_router
 from services.subscription_lifecycle import daily_maintenance
 
@@ -82,4 +82,9 @@ def create_app() -> FastAPI:
     app.include_router(usage.router, prefix="/api/user", tags=["user"])
     app.include_router(admin_users.router, prefix="/api/admin", tags=["admin"])
     app.include_router(viral.router, prefix="/api/viral", tags=["viral"])
+    app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
+    app.include_router(user_settings.router, prefix="/api/settings", tags=["settings"])
     return app
+
+# Module-level app instance for uvicorn (main:app)
+app = create_app()

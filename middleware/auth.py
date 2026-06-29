@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Header, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
@@ -74,3 +74,30 @@ async def get_current_user(
     if request:
         request.state.user = payload
     return payload
+
+
+
+async def get_current_user_or_api_key(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    request: Request = None,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+) -> Dict[str, Any]:
+    """Accepts either JWT Bearer token or X-API-Key header.
+
+    API key auth (lower priority):
+      - Checks X-API-Key header against settings.api_key
+      - Returns a fixed user dict for job tracking
+    JWT auth (higher priority):
+      - Standard Bearer token flow via get_current_user
+
+    This allows Story2Video (which uses Supabase auth) to call
+    orchestrator endpoints without a full JWT.
+    """
+    if x_api_key and settings.api_key and x_api_key == settings.api_key:
+        return {
+            "sub": settings.api_key_user_id,
+            "username": "api",
+            "role": "admin",
+        }
+    # Fallback to standard JWT auth
+    return await get_current_user(credentials, request)

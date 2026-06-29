@@ -14,7 +14,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field
 
-from shared_models.auth import JWTPayload, RefreshRequest as SharedRefreshRequest
+from shared_models.auth import (
+    AuthTokenResponse,
+    JWTPayload,
+    LoginRequest,
+    RefreshRequest as SharedRefreshRequest,
+    RegisterRequest,
+)
 RefreshRequest = SharedRefreshRequest  # noqa: F811  — use shared-models Pydantic model
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,26 +38,6 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 # ── Request / Response Models ───────────────────────────────────────────────
-
-
-class RegisterRequest(BaseModel):
-    username: str = Field(..., min_length=3, max_length=50)
-    email: str | None = Field(None)
-    password: str = Field(..., min_length=6, max_length=128)
-
-
-class LoginRequest(BaseModel):
-    username: str = Field(...)
-    password: str = Field(...)
-
-
-class TokenResponse(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-    expires_in: int
-    user: dict
-
 
 
 class LogoutRequest(BaseModel):
@@ -164,7 +150,7 @@ async def login(
         max_age=settings.access_token_expire_minutes * 60,
     )
 
-    return TokenResponse(
+    return AuthTokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
         expires_in=settings.access_token_expire_minutes * 60,

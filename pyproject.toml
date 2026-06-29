@@ -31,7 +31,7 @@ target-version = "py311"
 line-length = 100
 
 [tool.setuptools.packages.find]
-include = ["main*", "config*", "db*", "routers*", "services*", "middleware*", "engine*", "blocks*"]
+include = ["main*", "config*", "db*", "routers*", "services*", "middleware*", "engine*", "blocks*", "auto_exec*", "providers*"]
 
 [tool.ruff.lint]
 select = ["F", "E", "W", "I"]
@@ -40,3 +40,7 @@ select = ["F", "E", "W", "I"]
 testpaths = ["tests"]
 asyncio_mode = "strict"
 python_files = ["test_*.py"]
+timeout = 60
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]

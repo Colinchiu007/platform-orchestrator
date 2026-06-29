@@ -13,6 +13,12 @@ from services.viral_generator import (
     HookGenerationResult,
     RewriteResult,
     StructureSuggestionResult,
+    SEOTitleSuggestion,
+    SEOTitleGenerationResult,
+    CROAnalysisReport,
+    CRODimension,
+    AIOptimizedContentResult,
+    AISEOContentBlock,
     _call_llm,
     _parse_json_array,
     create_generator,
@@ -274,3 +280,274 @@ class TestEdgeCases:
         assert _count_words("") == 0
         # Numbers
         assert _count_words("123个") == 1
+
+
+# ── SEO/CRO Tests ────────────────────────────────────────────────────
+
+
+SEO_TITLES_JSON = json.dumps([
+    {
+        "title": "AI 编程工具推荐：10个提升10倍效率的必备插件",
+        "structure": "numbered_list",
+        "search_intent": "commercial",
+        "char_count": 28,
+        "predicted_ctr": 82,
+        "reasoning": "数字列表+利益承诺，商业意图匹配",
+    },
+    {
+        "title": "如何用 AI 工具自动化日常工作（2026指南）",
+        "structure": "how_to",
+        "search_intent": "info",
+        "char_count": 26,
+        "predicted_ctr": 75,
+        "reasoning": "How-to+年份限定，信息意图匹配",
+    },
+    {
+        "title": "2026年最佳 AI 编程助手对比：Cursor vs Copilot vs Windsurf",
+        "structure": "comparison",
+        "search_intent": "commercial",
+        "char_count": 32,
+        "predicted_ctr": 88,
+        "reasoning": "对比+年份，高商业价值",
+    },
+])
+
+CRO_REPORT_JSON = json.dumps([
+    {
+        "type": "overall",
+        "score": 65,
+        "quick_wins": [
+            "CTA 按钮文案从'提交'改为'免费获取报告'",
+            "表单字段从 8 个减少到 4 个",
+        ],
+        "high_impact_changes": [
+            "头图替换为结果展示型图片",
+            "增加客户 logo 行和推荐语",
+        ],
+        "headline_alternatives": [
+            "30天内提升转化率200%——我们的客户证明了这一点",
+            "不用代码，不用设计，你的落地页就能转化翻倍",
+        ],
+        "cta_alternatives": [
+            "免费获取完整报告",
+            "立即开始30天试用",
+        ],
+    },
+    {
+        "dimension": "value_proposition_clarity",
+        "score": 55,
+        "issues": ["价值主张不清晰，5秒内无法理解产品是什么"],
+        "recommendations": ["将'AI驱动'改为具体解决方案描述"],
+    },
+    {
+        "dimension": "headline_effectiveness",
+        "score": 70,
+        "issues": ["标题有吸引力但与搜索来源不匹配"],
+        "recommendations": ["添加数字和具体成果词"],
+    },
+    {
+        "dimension": "cta_hierarchy",
+        "score": 45,
+        "issues": ["只有一个通用CTA按钮"],
+        "recommendations": ["增加主要/次要CTA层级"],
+    },
+])
+
+AI_SEO_BLOCKS_JSON = json.dumps([
+    {
+        "block_type": "definition",
+        "content": "AI SEO 是优化内容使其在 AI 搜索引擎中更易被提取和引用的实践方法。与传统 SEO 关注排名不同，AI SEO 关注内容的可提取性和可引用性。",
+        "target_query": "什么是 AI SEO",
+    },
+    {
+        "block_type": "step_by_step",
+        "content": "1. 识别目标查询\n2. 创建40-60字的精确定义块\n3. 添加引用来源和统计数据的支持段落\n4. 使用 FAQ Schema 标记常见问题\n5. 定期更新内容保持时效性",
+        "target_query": "如何优化 AI SEO",
+    },
+    {
+        "block_type": "faq",
+        "content": "AI SEO 和传统 SEO 有什么区别？传统 SEO 以排名为目标，AI SEO 以被 AI 系统引用为目标。",
+        "target_query": "AI SEO vs 传统 SEO",
+    },
+])
+
+
+class TestSEOTitles:
+    """Test SEO-optimized title generation."""
+
+    @pytest.mark.asyncio
+    async def test_generate_seo_titles_basic(self, generator):
+        with patch("services.viral_generator._call_llm", new_callable=AsyncMock) as m:
+            m.return_value = SEO_TITLES_JSON
+            result = await generator.generate_seo_titles(
+                topic="AI 编程工具",
+                keywords="AI编程, 开发工具, 效率提升",
+                search_intent="commercial",
+                count=3,
+            )
+            assert isinstance(result, SEOTitleGenerationResult)
+            assert len(result.titles) == 3
+            assert result.topic == "AI 编程工具"
+            assert result.keywords == "AI编程, 开发工具, 效率提升"
+            assert result.search_intent == "commercial"
+
+            # Check first SEO title
+            t = result.titles[0]
+            assert isinstance(t, SEOTitleSuggestion)
+            assert t.title == "AI 编程工具推荐：10个提升10倍效率的必备插件"
+            assert t.structure == "numbered_list"
+            assert t.search_intent == "commercial"
+            assert t.char_count == 28
+            assert t.predicted_ctr == 82
+
+    @pytest.mark.asyncio
+    async def test_generate_seo_titles_defaults(self, generator):
+        with patch("services.viral_generator._call_llm", new_callable=AsyncMock) as m:
+            m.return_value = SEO_TITLES_JSON
+            result = await generator.generate_seo_titles(
+                topic="AI 工具",
+            )
+            assert len(result.titles) >= 1
+            assert result.search_intent == "info"
+
+    @pytest.mark.asyncio
+    async def test_generate_seo_titles_empty(self, generator):
+        with patch("services.viral_generator._call_llm", new_callable=AsyncMock) as m:
+            m.return_value = ""
+            result = await generator.generate_seo_titles(topic="test")
+            assert len(result.titles) == 0
+
+
+class TestCROAnalysis:
+    """Test CRO page analysis."""
+
+    @pytest.mark.asyncio
+    async def test_analyze_cro_page_basic(self, generator):
+        with patch("services.viral_generator._call_llm", new_callable=AsyncMock) as m:
+            m.return_value = CRO_REPORT_JSON
+            result = await generator.analyze_cro_page(
+                page_content="<html><body><h1>Welcome</h1><p>AI产品介绍</p></body></html>",
+                page_type="landing",
+                page_url="https://example.com",
+            )
+            assert isinstance(result, CROAnalysisReport)
+            assert result.page_type == "landing"
+            assert result.page_url == "https://example.com"
+            assert result.overall_score == 65
+            assert len(result.dimensions) == 3
+            assert len(result.quick_wins) == 2
+            assert len(result.high_impact_changes) == 2
+            assert len(result.headline_alternatives) == 2
+            assert len(result.cta_alternatives) == 2
+
+    @pytest.mark.asyncio
+    async def test_analyze_cro_dimension_order(self, generator):
+        """Verify CRO dimensions retain correct names from JSON."""
+        with patch("services.viral_generator._call_llm", new_callable=AsyncMock) as m:
+            m.return_value = CRO_REPORT_JSON
+            result = await generator.analyze_cro_page(
+                page_content="<h1>Product</h1>",
+                page_type="homepage",
+            )
+            assert result.dimensions[0].dimension == "value_proposition_clarity"
+            assert result.dimensions[0].score == 55
+            assert len(result.dimensions[0].issues) == 1
+
+    @pytest.mark.asyncio
+    async def test_analyze_cro_empty_response(self, generator):
+        with patch("services.viral_generator._call_llm", new_callable=AsyncMock) as m:
+            m.return_value = "[]"
+            result = await generator.analyze_cro_page(
+                page_content="test",
+                page_type="blog",
+            )
+            assert result.overall_score == 0
+            assert len(result.dimensions) == 0
+
+
+class TestAISEOContent:
+    """Test AI-optimized content generation."""
+
+    @pytest.mark.asyncio
+    async def test_generate_ai_seo_content_basic(self, generator):
+        with patch("services.viral_generator._call_llm", new_callable=AsyncMock) as m:
+            m.return_value = AI_SEO_BLOCKS_JSON
+            result = await generator.generate_ai_seo_content(
+                content="AI SEO is the practice of optimizing content...",
+                topic="AI SEO 入门",
+                keywords="AI SEO, GEO, LLMO",
+            )
+            assert isinstance(result, AIOptimizedContentResult)
+            assert len(result.blocks) == 3
+            assert result.topic == "AI SEO 入门"
+            assert result.original_content == "AI SEO is the practice of optimizing content..."
+
+            # Check block types
+            assert result.blocks[0].block_type == "definition"
+            assert result.blocks[1].block_type == "step_by_step"
+            assert result.blocks[2].block_type == "faq"
+
+    @pytest.mark.asyncio
+    async def test_generate_ai_seo_content_empty_response(self, generator):
+        with patch("services.viral_generator._call_llm", new_callable=AsyncMock) as m:
+            m.return_value = ""
+            result = await generator.generate_ai_seo_content(
+                content="test",
+                topic="test",
+            )
+            assert len(result.blocks) == 0
+
+    @pytest.mark.asyncio
+    async def test_ai_seo_block_has_query(self, generator):
+        with patch("services.viral_generator._call_llm", new_callable=AsyncMock) as m:
+            m.return_value = AI_SEO_BLOCKS_JSON
+            result = await generator.generate_ai_seo_content(
+                content="test content",
+                topic="test",
+            )
+            assert result.blocks[0].target_query == "什么是 AI SEO"
+            assert result.blocks[1].target_query == "如何优化 AI SEO"
+
+
+class TestSEOEdgeCases:
+    """Test edge cases for SEO/CRO methods."""
+
+    @pytest.mark.asyncio
+    async def test_seo_titles_fallback_parse(self, generator):
+        """When JSON parsing fails, fall back to line-by-line."""
+        with patch("services.viral_generator._call_llm", new_callable=AsyncMock) as m:
+            m.return_value = "1. SEO标题一\n2. SEO标题二"
+            result = await generator.generate_seo_titles(topic="test")
+            assert len(result.titles) >= 1
+
+    @pytest.mark.asyncio
+    async def test_ai_seo_blocks_single_object(self, generator):
+        """Handle single object with blocks field."""
+        with patch("services.viral_generator._call_llm", new_callable=AsyncMock) as m:
+            m.return_value = json.dumps({
+                "blocks": [
+                    {"block_type": "definition", "content": "Test block", "target_query": "test"},
+                ]
+            })
+            result = await generator.generate_ai_seo_content(
+                content="test",
+                topic="test",
+            )
+            assert len(result.blocks) == 1
+            assert result.blocks[0].block_type == "definition"
+
+    @pytest.mark.asyncio
+    async def test_cro_dimensions_optional_fields(self, generator):
+        """CRO dimensions with missing optional fields should not crash."""
+        with patch("services.viral_generator._call_llm", new_callable=AsyncMock) as m:
+            m.return_value = json.dumps([
+                {"type": "overall", "score": 50},
+                {"dimension": "trust_signals", "score": 40},
+            ])
+            result = await generator.analyze_cro_page(
+                page_content="test",
+                page_type="pricing",
+            )
+            assert result.overall_score == 50
+            assert len(result.dimensions) == 1
+            assert result.dimensions[0].dimension == "trust_signals"

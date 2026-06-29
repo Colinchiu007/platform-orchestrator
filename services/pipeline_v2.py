@@ -1,18 +1,17 @@
-"""Block-based video pipeline (v2) — replaces the hardcoded 4-step flow.
+"""Pipeline v2 — Block Graph based pipeline execution.
 
-Builds a Graph from registered Blocks and executes via ExecutionEngine.
-New code path gated by ``pipeline_v2`` feature gate. Old path retained.
+Builds a 5-step DAG using registered Blocks and runs via ExecutionEngine.
+Replaces the hardcoded step functions in pipeline.py.
 
-Usage:
-    result = await run_pipeline_v2(
-        job_id="xxx",
-        article_id="xxx",
-        split_json={"scenes": [...]},
-        image_effect="zoom-in",
-        transition="fade",
-        voice_id="zh-CN-XiaoxiaoNeural",
-        image_provider="minimax",
-    )
+DAG structure::
+
+    splitter ──scenes──→ optimizer ──prompts──→ image_gen ──image_paths─┐
+        │                                                                │
+        └──scenes──→ tts ──────────audio_path─────────────────────────→ compose
+
+Each node's ``status`` is written to ``jobs`` table as it runs,
+preserving the same step labels ("splitting", "optimizing", "tts",
+"imaging", "composing") that the frontend polls.
 """
 
 from __future__ import annotations
@@ -23,14 +22,32 @@ import os
 
 import aiosqlite
 
-from engine.executor import ExecutionContext, ExecutionEngine
+from engine.executor import (
+    CallbackConfig,
+    ExecutionContext,
+    ExecutionEngine,
+    ExecutionResult,
+    RetryPolicy,
+)
 from engine.graph import Graph, Node, Link
+
+# 触发所有 Block 注册
+import blocks  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = "orchestrator.db"
+# ── 状态映射 ──────────────────────────────────────────────────────────────────
 
-# ── 管线常量 ──────────────────────────────────────────────────────────────────
+_STEP_STATUS: dict[str, str] = {
+    "splitter": "splitting",
+    "optimizer": "optimizing",
+    "tts": "tts",
+    "image_gen": "imaging",
+    "compose": "composing",
+}
+
+
+# ── 辅助函数 ──────────────────────────────────────────────────────────────────
 
 
 def _scratch_dir(job_id: str) -> str:
@@ -39,202 +56,261 @@ def _scratch_dir(job_id: str) -> str:
     return d
 
 
-# ── 管线定义 ──────────────────────────────────────────────────────────────────
+def _ratio_dims(ratio: str) -> tuple[int, int]:
+    return {
+        "9:16": (720, 1280),
+        "16:9": (1280, 720),
+        "1:1": (720, 720),
+    }.get(ratio, (720, 1280))
+
+
+# ── 图构造器 ──────────────────────────────────────────────────────────────────
 
 
 def build_pipeline_graph(
-    scenes: list[dict],
-    scratch: str,
+    content: str,
     voice: str,
-    image_provider: str,
-    image_effect: str,
-    transition: str,
+    prompt_platform: str,
+    video_ratio: str,
+    job_id: str,
 ) -> Graph:
-    """构建标准的 4 步视频管线 Graph。
+    """构建 5 步管线 DAG。
 
-    split 已经在路由层完成（从 DB 读 split_json），这里跑：
-    TTS → prompt optimize → image gen → compose
+    Args:
+        content: 原始文本内容
+        voice: 音色 ID
+        prompt_platform: 提示词平台（midjourney/sd_xl/dall_e 等）
+        video_ratio: 视频比例（9:16/16:9/1:1）
+        job_id: 任务 ID（用于生成临时目录和输出路径）
+
+    Returns:
+        可执行的 Graph 对象
     """
+    scratch = _scratch_dir(job_id)
+    width, height = _ratio_dims(video_ratio)
+    output_path = os.path.join(scratch, f"{job_id}.mp4")
+
+    nodes = [
+        Node(
+            id="splitter",
+            block_id="splitter",
+            input_data={"content": content},
+        ),
+        Node(
+            id="optimizer",
+            block_id="optimizer",
+            config={"platform": prompt_platform},
+        ),
+        Node(
+            id="tts",
+            block_id="tts",
+            config={"voice": voice},
+            input_data={"output_dir": os.path.join(scratch, "audio")},
+        ),
+        Node(
+            id="image_gen",
+            block_id="image_gen",
+            input_data={"output_dir": os.path.join(scratch, "images")},
+        ),
+        Node(
+            id="compose",
+            block_id="compose",
+            config={
+                "width": width,
+                "height": height,
+                "image_duration": 6.0,
+                "fps": 30,
+            },
+            input_data={"output_path": output_path},
+        ),
+    ]
+
+    links = [
+        Link(
+            source_id="splitter", source_output="scenes",
+            target_id="optimizer", target_input="scenes",
+        ),
+        Link(
+            source_id="splitter", source_output="scenes",
+            target_id="tts", target_input="scenes",
+        ),
+        Link(
+            source_id="optimizer", source_output="prompts",
+            target_id="image_gen", target_input="prompts",
+        ),
+        Link(
+            source_id="tts", source_output="audio_path",
+            target_id="compose", target_input="audio_path",
+        ),
+        Link(
+            source_id="image_gen", source_output="image_paths",
+            target_id="compose", target_input="image_paths",
+        ),
+    ]
+
     return Graph(
-        id="video-pipeline-v2",
-        description="标准视频生成管线 (Block 引擎)",
-        nodes=[
-            Node(
-                id="tts",
-                block_id="tts",
-                input_data={
-                    "scenes": scenes,
-                    "voice": voice,
-                    "output_dir": scratch,
-                },
-            ),
-            Node(
-                id="optimizer",
-                block_id="optimizer",
-                input_data={
-                    "scenes": scenes,
-                    "platform": image_provider,
-                },
-            ),
-            Node(
-                id="image_gen",
-                block_id="image_gen",
-                config={"output_dir": scratch},
-                # prompts 来自 optimizer 的输出
-            ),
-            Node(
-                id="compose",
-                block_id="compose",
-                config={
-                    "width": 1280,
-                    "height": 720,
-                    "image_duration": 6.0,
-                    "output_path": os.path.join(scratch, "final.mp4"),
-                },
-                # image_paths 来自 image_gen, audio_path 来自 tts
-            ),
-        ],
-        links=[
-            Link(
-                source_id="optimizer",
-                source_output="prompts",
-                target_id="image_gen",
-                target_input="prompts",
-            ),
-            Link(
-                source_id="tts",
-                source_output="audio_path",
-                target_id="compose",
-                target_input="audio_path",
-            ),
-            Link(
-                source_id="image_gen",
-                source_output="image_paths",
-                target_id="compose",
-                target_input="image_paths",
-            ),
-        ],
+        id=f"pipeline-{job_id}",
+        description="Pipeline v2 — 5-step video generation",
+        nodes=nodes,
+        links=links,
     )
 
 
-# ── DB 工具 ───────────────────────────────────────────────────────────────────
+# ── 运行入口 ──────────────────────────────────────────────────────────────────
 
 
-async def _update_job(job_id: str, status: str, **extra) -> None:
-    """更新任务状态到 DB。"""
-    db = await aiosqlite.connect(DB_PATH)
-    await db.execute("PRAGMA journal_mode=WAL;")
-    try:
-        output_data = extra.get("output_data")
-        error = extra.get("error")
-        sql = (
-            "UPDATE jobs SET status = ?, output_data = ?, error = ?, "
-            "updated_at = datetime('now') WHERE id = ?"
-        )
-        await db.execute(sql, (
-            status,
-            json.dumps(output_data or {}),
-            error,
-            job_id,
-        ))
-        await db.commit()
-    finally:
-        await db.close()
+async def run_block_pipeline(
+    db_path: str,
+    job_id: str,
+    content: str,
+    *,
+    voice: str = "zh-CN-XiaoxiaoNeural",
+    prompt_platform: str = "midjourney",
+    video_ratio: str = "9:16",
+) -> ExecutionResult:
+    """运行 Block Graph 管线。
+
+    这是 ``pipeline.run_pipeline()`` 的 v2 实现。
+    提供相同的语义但通过 Block Graph 引擎执行。
+
+    Args:
+        db_path: SQLite 数据库路径（用于状态持久化）
+        job_id: 任务 ID
+        content: 输入文本
+        voice: 音色 ID
+        prompt_platform: 提示词平台
+        video_ratio: 视频比例
+
+    Returns:
+        执行结果（含各节点状态和输出）
+    """
+    scratch = _scratch_dir(job_id)
+
+    # 1. 构建图
+    graph = build_pipeline_graph(
+        content=content,
+        voice=voice,
+        prompt_platform=prompt_platform,
+        video_ratio=video_ratio,
+        job_id=job_id,
+    )
+
+    # 2. 创建执行上下文
+    context = ExecutionContext(
+        graph=graph,
+        job_id=job_id,
+        db_path=db_path,
+        scratch_dir=scratch,
+    )
+
+    # 3. 重试策略
+    retry_policy = RetryPolicy(max_retries=2)
+
+    # 4. 注册每节点状态回调 → 更新 jobs.status
+    _stopped = False
+
+    async def _update_status(node_id: str) -> None:
+        """节点开始时更新 jobs.status。"""
+        nonlocal _stopped
+        if _stopped:
+            return
+        step = _STEP_STATUS.get(node_id)
+        if not step:
+            return
+        async with aiosqlite.connect(db_path) as db:
+            await db.execute(
+                "UPDATE jobs SET status = ? WHERE id = ?", (step, job_id),
+            )
+            await db.commit()
+
+    # 注入到 context.config，让 engine 在每节点执行前调用
+    context.on_node_start = _update_status
+
+    # 5. 注册完成回调 → 更新最终状态
+    async def _finalize(result: ExecutionResult) -> None:
+        nonlocal _stopped
+        async with aiosqlite.connect(db_path) as db:
+            if result.success:
+                output_path = result.get_output("compose", "output_path", "")
+                await db.execute(
+                    "UPDATE jobs SET status = 'done', output_path = ? WHERE id = ?",
+                    (output_path, job_id),
+                )
+            else:
+                errors = "; ".join(
+                    f"{nid}: {err}"
+                    for nid, err in result.node_errors.items()
+                )
+                await db.execute(
+                    "UPDATE jobs SET status = 'failed', error = ? WHERE id = ?",
+                    (errors[:500], job_id),
+                )
+            await db.commit()
+        logger.info("Job %s: final status=%s", job_id, "done" if result.success else "failed")
+        _stopped = True
+
+    context.callbacks = CallbackConfig(
+        on_complete=_finalize,
+        on_fail=_finalize,
+    )
+
+    # 6. 执行
+    engine = ExecutionEngine()
+    result = await engine.run(graph, context, retry_policy)
+    return result
 
 
-# ── 公开接口 ───────────────────────────────────────────────────────────────────
+# ── 向后兼容别名 ─────────────────────────────────────────────────────────────
 
 
 async def run_pipeline_v2(
     job_id: str,
     article_id: str,
     split_json: dict,
-    image_effect: str = "zoom-in",
-    transition: str = "fade",
-    voice_id: str = "zh-CN-XiaoxiaoNeural",
-    image_provider: str = "minimax",
-) -> dict:
-    """执行 Block 引擎版视频管线。
+    image_effect: str,
+    transition: str,
+    voice_id: str,
+    image_provider: str,
+) -> None:
+    """Legacy signature — used by routers/video.py before Phase 2.
 
-    Args:
-        job_id: 任务 ID（对应 jobs 表主键）
-        article_id: 文章 ID
-        split_json: 分句结果（包含 scenes 列表）
-        image_effect: 图片动效
-        transition: 转场效果
-        voice_id: TTS 音色
-        image_provider: 图片生成服务商
+    This function provides backward compatibility with the old v1 signature.
+    In Phase 2, the pipeline is built and run via ``run_block_pipeline()``,
+    but callers using the old signature (``routers/video.py``) continue to work.
 
-    Returns:
-        管线执行结果字典，格式与旧版 _update("done", ...) 一致
-
-    Raises:
-        RuntimeError: 管线执行失败
+    Args are accepted for compatibility; the actual pipeline reads its config
+    from the jobs table via ``run_block_pipeline(db_path, job_id, content)``.
     """
-    scenes = split_json.get("scenes", [])
-    if not scenes:
-        raise ValueError("split_json 中没有 scenes")
+    from services.pipeline_v2 import run_block_pipeline
+    from db import get_db_path
 
-    scratch = _scratch_dir(job_id)
+    # Read content and config from jobs table
+    db_path = get_db_path() if callable(get_db_path) else "/srv/projects/platform-orchestrator/data.db"
+    db_path = db_path or "/srv/projects/platform-orchestrator/data.db"
 
-    # 1. 构建 Graph
-    graph = build_pipeline_graph(
-        scenes=scenes,
-        scratch=scratch,
-        voice=voice_id,
-        image_provider=image_provider,
-        image_effect=image_effect,
-        transition=transition,
-    )
+    import aiosqlite, json
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT input_data, content FROM jobs WHERE id = ?", (job_id,)
+        )
+        row = await cursor.fetchone()
 
-    # 2. 创建执行上下文
-    ctx = ExecutionContext(
-        graph=graph,
+    if not row:
+        logger.error("run_pipeline_v2: job %s not found", job_id)
+        return
+
+    content = row["content"] or ""
+    cfg = json.loads(row["input_data"]) if row["input_data"] else {}
+
+    result = await run_block_pipeline(
+        db_path=db_path,
         job_id=job_id,
-        db_path=DB_PATH,
-        scratch_dir=scratch,
+        content=content,
+        voice=cfg.get("voice", "zh-CN-XiaoxiaoNeural"),
+        prompt_platform=cfg.get("prompt_platform", "midjourney"),
+        video_ratio=cfg.get("video_ratio", "9:16"),
     )
 
-    # 3. 执行
-    engine = ExecutionEngine()
-
-    await _update_job(job_id, "processing", output_data={"progress": 0.0})
-
-    try:
-        result = await engine.run(graph, ctx)
-    except Exception as e:
-        await _update_job(job_id, "failed", error=str(e))
-        raise
-
-    # 4. 检查执行结果
     if not result.success:
-        failed = result.failed_nodes
-        errors = {nid: result.node_errors.get(nid, "unknown") for nid in failed}
-        error_msg = f"管线步骤失败: {errors}"
-        await _update_job(job_id, "failed", error=error_msg)
-        raise RuntimeError(error_msg)
-
-    # 5. 提取产出
-    audio_path = result.get_output("tts", "audio_path", "")
-    image_paths = result.get_output("image_gen", "image_paths", [])
-    compose_output = result.get_output("compose", "output", {})
-    output_path = compose_output.get("output_path", "")
-    duration = compose_output.get("duration_seconds", 0.0)
-
-    output = {
-        "progress": 1.0,
-        "output_path": output_path,
-        "duration": duration,
-        "scenes": len(scenes),
-        "images_generated": len(image_paths),
-        "pipeline_version": "v2",
-    }
-
-    await _update_job(job_id, "done", output_data=output)
-
-    logger.info(
-        "Pipeline v2 done: job=%s scenes=%d images=%d duration=%.1fs",
-        job_id, len(scenes), len(image_paths), duration,
-    )
-
-    return output
+        logger.error("run_pipeline_v2 failed for job %s: %s", job_id, result.node_errors)

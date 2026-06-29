@@ -67,3 +67,18 @@ class NodeNotFoundError(BlockEngineError):
 class LinkError(BlockEngineError):
     """Link 连接异常（类型不匹配等）。"""
     pass
+
+
+class MaxRetriesExceeded(BlockEngineError):
+    """节点重试次数用尽 — 不再重试。"""
+    def __init__(self, node_id: str, block_id: str, retries: int, last_error: str) -> None:
+        self.node_id = node_id
+        self.block_id = block_id
+        self.retries = retries
+        self.last_error = last_error
+        super().__init__(f"[{node_id}] 重试 {retries} 次后仍失败: {last_error}")
+
+
+class VersionMismatchError(BlockEngineError):
+    """Block 版本不兼容。"""
+    pass

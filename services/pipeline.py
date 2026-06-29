@@ -69,16 +69,18 @@ async def run_pipeline(
 ) -> None:
     """Execute split → optimize → TTS → image → compose.
 
+    Phase 2: Delegates to ``pipeline_v2.run_block_pipeline()`` for Block Graph
+    execution, replacing the previous hardcoded 5-step implementation.
+
     Opens its own DB connection (BackgroundTasks run after request closes).
     Reads voice/video_ratio/prompt_platform from ``jobs.input_data`` JSON.
-    Each step updates ``jobs.status`` so the frontend can poll progress.
-    The compose step is submitted through VideoConcurrencyController.
+    The Block engine handles per-step status updates ("splitting" → "optimizing"
+    → "tts" → "imaging" → "composing" → "done") and writes them to ``jobs`` table
+    so the frontend can poll progress.
     """
     db = await aiosqlite.connect(db_path)
     db.row_factory = aiosqlite.Row
-    await db.execute("PRAGMA journal_mode=WAL;")
     try:
-        # Read config from job record
         async with db.execute(
             "SELECT input_data FROM jobs WHERE id = ?", (job_id,)
         ) as cursor:
@@ -87,131 +89,30 @@ async def run_pipeline(
             logger.error("Job %s not found in DB", job_id)
             return
         cfg = json.loads(row["input_data"])
-        voice = cfg.get("voice", "zh-CN-XiaoxiaoNeural")
-        video_ratio = cfg.get("video_ratio", "9:16")
-        prompt_platform = cfg.get("prompt_platform", "midjourney")
-
-        # ── Step 1: Split ────────────────────────────────────────
-        await _update_status(db, job_id, "splitting")
-        scenes = await _run_splitter(content)
-        if not scenes:
-            await _fail_job(db, job_id, "分句器未返回任何场景")
-            return
-
-        # ── Step 2: Optimize ─────────────────────────────────────
-        await _update_status(db, job_id, "optimizing")
-        prompts = await _run_optimizer(scenes, prompt_platform)
-
-        # ── Step 3: TTS ──────────────────────────────────────────
-        await _update_status(db, job_id, "tts")
-        scratch = _scratch_dir(job_id)
-        audio_path = os.path.join(scratch, "audio.mp3")
-        await _run_tts(scenes, voice, audio_path)
-
-        # ── Step 4: Images ───────────────────────────────────────
-        await _update_status(db, job_id, "imaging")
-        image_paths = await _run_image_gen(prompts, scratch)
-
-        # ── Step 5: Compose (via concurrency controller) ─────────
-        await _update_status(db, job_id, "composing")
-
-        width, height = _ratio_dims(video_ratio)
-        output_path = os.path.join(scratch, f"{job_id}.mp4")
-
-        async def _compose():
-            from video_compositor import CompositorInput, compose_video
-
-            inp = CompositorInput(
-                images=image_paths,
-                audio_path=audio_path,
-                output_path=output_path,
-                width=width,
-                height=height,
-            )
-            result = await asyncio.to_thread(compose_video, inp)
-            if not result.success:
-                raise RuntimeError(f"合成失败: {result.error}")
-            return result
-
-        concurrency_result = await video_concurrency.submit(job_id, _compose)
-        if concurrency_result == "rejected":
-            await _fail_job(db, job_id, "系统繁忙，任务被拒绝（内存不足或队列满）")
-            return
-
-        # ── Done ─────────────────────────────────────────────────
-        await _update_status(db, job_id, "done", output_path=output_path)
-
-    except Exception as exc:
-        logger.exception("Pipeline failed for job %s", job_id)
-        await _fail_job(db, job_id, f"管道异常: {exc}")
     finally:
         await db.close()
 
+    voice = cfg.get("voice", "zh-CN-XiaoxiaoNeural")
+    video_ratio = cfg.get("video_ratio", "9:16")
+    prompt_platform = cfg.get("prompt_platform", "midjourney")
 
-# ─── Step implementations ────────────────────────────────────────────
+    logger.info(
+        "Job %s: Block Graph pipeline (voice=%s, ratio=%s, platform=%s)",
+        job_id, voice, video_ratio, prompt_platform,
+    )
 
+    from services.pipeline_v2 import run_block_pipeline
 
-async def _run_splitter(content: str) -> list[dict]:
-    from splitter import SmartSentenceSplitter
+    result = await run_block_pipeline(
+        db_path=db_path,
+        job_id=job_id,
+        content=content,
+        voice=voice,
+        prompt_platform=prompt_platform,
+        video_ratio=video_ratio,
+    )
 
-    splitter = SmartSentenceSplitter({"language": "zh"})
-    result = await asyncio.to_thread(splitter.split, content)
-    return [
-        {
-            "text": s.text,
-            "segment_id": s.segment_id,
-            "estimated_duration": s.estimated_duration,
-            "sentences": [st.text for st in s.sentences],
-        }
-        for s in result.scenes
-    ]
-
-
-async def _run_optimizer(scenes: list[dict], platform: str) -> list[str]:
-    from prompt_engine import Optimizer, OptimizeRequest, PlatformType
-
-    platform_map = {
-        "midjourney": PlatformType.MIDJOURNEY,
-        "stable_diffusion": PlatformType.STABLE_DIFFUSION,
-        "dall_e": PlatformType.DALLE,
-        "sd_xl": PlatformType.STABLE_DIFFUSION,
-        "flux": PlatformType.GENERIC,
-        "kling": PlatformType.GENERIC,
-        "cogview": PlatformType.GENERIC,
-    }
-    pt = platform_map.get(platform, PlatformType.GENERIC)
-    optimizer = Optimizer()
-
-    prompts: list[str] = []
-    for scene in scenes:
-        req = OptimizeRequest(
-            prompt=scene["text"][:1500],
-            platform=pt,
-            creative_level=5,
-            max_length=300,
-            num_candidates=1,
-        )
-        result = await asyncio.to_thread(optimizer.optimize, req)
-        prompts.append(result.optimized_prompt or scene["text"])
-    return prompts
-
-
-async def _run_tts(scenes: list[dict], voice: str, output_path: str) -> None:
-    from services.tts_service import text_to_speech
-
-    full_text = " ".join(s["text"] for s in scenes)
-    await text_to_speech(full_text, voice_name=voice, output_path=output_path)
-
-
-async def _run_image_gen(prompts: list[str], scratch: str) -> list[str]:
-    from services.image_service import generate_image
-
-    paths: list[str] = []
-    for i, prompt in enumerate(prompts):
-        path = os.path.join(scratch, f"scene_{i:03d}.png")
-        result = await generate_image(prompt, output_path=path)
-        if result.status == "success":
-            paths.append(result.image_url or path)
-        else:
-            logger.warning("Image gen failed for scene %d: %s", i, result.error)
-    return paths
+    if result.success:
+        logger.info("Job %s pipeline completed successfully", job_id)
+    else:
+        logger.error("Job %s pipeline failed: %s", job_id, result.node_errors)
