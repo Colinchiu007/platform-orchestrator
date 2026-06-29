@@ -19,7 +19,7 @@ features:
     enabled: true
     tier: 1
   publish_multi_platform:
-    enabled: false
+    enabled: true
     tier: 3
   publish_single_platform:
     enabled: true

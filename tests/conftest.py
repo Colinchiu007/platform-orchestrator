@@ -18,6 +18,7 @@ os.environ.setdefault("PO_SECRET_KEY", "test-secret-key-change-me-in-production"
 # Use two separate SQLite files: test.db for main tables, test_auth.db for auth schema
 # This avoids SQLite self-ATTACH issues when the same file is used as both main and auth.
 os.environ.setdefault("PO_DATABASE_URL", "sqlite+aiosqlite:///./test.db")
+os.environ.setdefault("PO_API_KEY", "test-cookie-push-key")
 os.environ.setdefault("PO_DB_AUTH_SCHEMA", "auth")
 
 import pytest

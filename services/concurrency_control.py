@@ -78,6 +78,7 @@ class VideoConcurrencyController:
 
     async def submit(self, job_id, coro_factory):
         if not self._enabled:
+            self._active_count += 1
             asyncio.create_task(self._run_with_release(job_id, coro_factory))
             return "processing"
 
