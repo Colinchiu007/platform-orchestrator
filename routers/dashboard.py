@@ -33,6 +33,17 @@ class GenerateRequest(BaseModel):
     publish_platforms: list[str] = Field(default_factory=list)
 
 
+class BatchGenerateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    article_ids: list[str] = Field(
+        ..., min_length=1, max_length=20,
+        description="Source article IDs (1-20 per batch)",
+    )
+    voice: str = Field(default="zh-CN-XiaoxiaoNeural")
+    video_ratio: str = Field(default="9:16")
+    prompt_platform: str = Field(default="midjourney")
+
+
 # ─── Endpoints ───────────────────────────────────────────────────────
 
 
@@ -182,6 +193,67 @@ async def generate_pipeline(
     )
 
     return {"job_id": job_id, "status": "pending"}
+
+
+
+
+@router.post("/batch-generate")
+@requires_feature("batch_operations")
+async def batch_generate_pipeline(
+    body: BatchGenerateRequest,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Batch generate: submit multiple articles in one request.
+    
+    Creates one job per valid article and dispatches BackgroundTasks.
+    Returns list of {job_id, article_id, status} plus any missing article_ids.
+    Protected by batch_operations feature gate.
+    """
+    # 1. Fetch all requested articles
+    placeholders = ",".join("?" * len(body.article_ids))
+    async with db.execute(
+        f"SELECT * FROM articles WHERE id IN ({placeholders}) AND user_id = ?",
+        (*body.article_ids, current_user["sub"]),
+    ) as cursor:
+        articles = await cursor.fetchall()
+    
+    found_ids = {a["id"] for a in articles}
+    missing = [aid for aid in body.article_ids if aid not in found_ids]
+    
+    # 2. Create one job per article
+    import json
+    results = []
+    for article in articles:
+        content = article["result_content"] or article["source_content"]
+        job_id = str(uuid.uuid4())
+        input_data = json.dumps({
+            "article_id": article["id"],
+            "voice": body.voice,
+            "video_ratio": body.video_ratio,
+            "prompt_platform": body.prompt_platform,
+        })
+        await db.execute(
+            """INSERT INTO jobs (id, user_id, job_type, status, input_data, created_at)
+               VALUES (?, ?, 'video', 'pending', ?, datetime('now'))""",
+            (job_id, current_user["sub"], input_data),
+        )
+        background_tasks.add_task(
+            run_pipeline,
+            db_path=DB_PATH,
+            job_id=job_id,
+            content=content,
+        )
+        results.append({"job_id": job_id, "article_id": article["id"], "status": "pending"})
+    
+    await db.commit()
+    
+    return {
+        "results": results,
+        "total": len(results),
+        "missing": missing if missing else None,
+    }
 
 
 @router.post("/upload")
