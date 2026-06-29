@@ -22,13 +22,17 @@ from engine.errors import (
     BlockEngineError,
     GraphValidationError,
     LinkError,
+    MaxRetriesExceeded,
     NodeNotFoundError,
+    VersionMismatchError,
 )
 from engine.executor import (
+    CallbackConfig,
     ExecutionContext,
     ExecutionEngine,
     ExecutionResult,
     NodeStatus,
+    RetryPolicy,
 )
 from engine.graph import Graph, Link, Node
 
@@ -49,6 +53,8 @@ __all__ = [
     "ExecutionContext",
     "ExecutionResult",
     "NodeStatus",
+    "RetryPolicy",
+    "CallbackConfig",
     # Errors
     "BlockExecutionError",
     "BlockNotFoundError",
@@ -56,4 +62,6 @@ __all__ = [
     "GraphValidationError",
     "LinkError",
     "NodeNotFoundError",
+    "MaxRetriesExceeded",
+    "VersionMismatchError",
 ]
