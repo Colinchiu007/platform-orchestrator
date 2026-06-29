@@ -244,6 +244,7 @@ async def push_platform_cookies(
     platform: str,
     body: dict,
     current_user: dict = Depends(get_current_user_or_api_key),
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
 ):
     """Push login cookies from desktop client to orchestrator storage.
 
