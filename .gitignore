@@ -10,6 +10,8 @@ __pycache__/
 orchestrator.db
 orchestrator.db-shm
 orchestrator.db-wal
+test.db
+test_auth.db
 
 # Environment
 .env
@@ -25,4 +27,3 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
-test.db\ntest_auth.db
