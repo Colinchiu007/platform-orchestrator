@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Header, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
@@ -80,7 +80,7 @@ async def get_current_user(
 async def get_current_user_or_api_key(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     request: Request = None,
-    x_api_key: Optional[str] = None,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
 ) -> Dict[str, Any]:
     """Accepts either JWT Bearer token or X-API-Key header.
 

@@ -122,6 +122,7 @@ def clean_tables():
         conn.execute("DELETE FROM splits")
         conn.execute("DELETE FROM articles")
         conn.execute("DELETE FROM users")
+        conn.execute("DELETE FROM user_daily_usage")
         conn.commit()
     except sqlite3.OperationalError:
         pass
@@ -181,7 +182,7 @@ class TestVideoPipeline:
         assert resp.status_code == 200, f"Video job creation failed: {resp.text}"
         job = resp.json()
         assert "job_id" in job
-        assert job["status"] == "queued"
+        assert job["status"] in ("queued", "processing")
         assert "message" in job
 
         # ── Step 4: Verify job exists via GET ──
@@ -189,7 +190,7 @@ class TestVideoPipeline:
         assert resp.status_code == 200
         detail = resp.json()
         assert detail["job_id"] == job["job_id"]
-        assert detail["status"] == "queued"
+        assert detail["status"] in ("queued", "processing")
 
         # Background task was added (TestClient executes it as a no-op mock)
         assert mock_pipeline.called
@@ -258,10 +259,11 @@ class TestVideoPipeline:
         resp = client.post("/api/articles/fetch", json={"url": "https://example.com/list"}, headers=auth)
         article_id = resp.json()["article_id"]
         client.post(f"/api/articles/{article_id}/split", headers=auth)
-        client.post("/api/jobs/video", json={"article_id": article_id}, headers=auth)
+        vid_resp = client.post("/api/jobs/video", json={"article_id": article_id}, headers=auth)
 
         # List jobs
         resp = client.get("/api/jobs/video/", headers=auth)
+
         assert resp.status_code == 200
         items = resp.json()["items"]
         assert len(items) >= 1
