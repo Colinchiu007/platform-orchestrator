@@ -11,10 +11,11 @@ from __future__ import annotations
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from db import get_db
 from middleware.auth import get_current_user
+from middleware.feature_gate import requires_feature
 
 logger = logging.getLogger(__name__)
 
@@ -120,3 +121,42 @@ async def retry_job(
     await db.commit()
 
     return {"status": "pending", "message": "Job queued for retry"}
+
+
+@router.get("/export")
+@requires_feature("data_export")
+async def export_jobs(
+    format: str = Query(default="json", pattern="^(csv|json)$"),
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Export user's jobs as CSV or JSON.
+    
+    Returns all jobs (video, publish, etc.) for the current user
+    with appropriate Content-Type for file download.
+    """
+    async with db.execute(
+        """SELECT id, job_type, status, created_at, updated_at
+           FROM jobs WHERE user_id = ?
+           ORDER BY created_at DESC""",
+        (current_user["sub"],),
+    ) as cursor:
+        rows = await cursor.fetchall()
+    
+    jobs_list = [dict(r) for r in rows]
+    
+    if format == "csv":
+        import csv
+        import io
+        output = io.StringIO()
+        if jobs_list:
+            writer = csv.DictWriter(output, fieldnames=list(jobs_list[0].keys()))
+            writer.writeheader()
+            writer.writerows(jobs_list)
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=jobs_export.csv"},
+        )
+    
+    return {"items": jobs_list, "total": len(jobs_list)}

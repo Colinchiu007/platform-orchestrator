@@ -9,9 +9,9 @@ Endpoints:
 from __future__ import annotations
 
 import uuid
-from typing import Optional
+from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from db import get_db
@@ -129,6 +129,74 @@ async def list_articles(
     }
 
 
+class BatchDeleteRequest(BaseModel):
+    article_ids: list[str] = Field(..., description="List of article IDs to delete")
+
+
+@router.post("/batch-delete")
+@requires_feature("batch_operations")
+async def batch_delete_articles(
+    body: BatchDeleteRequest,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Batch delete articles by IDs.
+    
+    Only deletes articles belonging to the current user.
+    Returns count of successfully deleted articles.
+    """
+    if not body.article_ids:
+        raise HTTPException(status_code=400, detail="No article IDs provided")
+    
+    deleted = 0
+    for aid in body.article_ids:
+        await db.execute(
+            "DELETE FROM articles WHERE id = ? AND user_id = ?",
+            (aid, current_user["sub"]),
+        )
+        deleted += 1
+    await db.commit()
+    
+    return {"deleted": deleted, "total": len(body.article_ids)}
+
+
+@router.get("/export")
+@requires_feature("data_export")
+async def export_articles(
+    format: str = Query(default="json", pattern="^(csv|json)$"),
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Export user's articles as CSV or JSON.
+    
+    Returns content with appropriate Content-Type and Content-Disposition headers
+    for file download.
+    """
+    async with db.execute(
+        """SELECT id, source_type, source_url, word_count_original, status, created_at
+           FROM articles WHERE user_id = ?
+           ORDER BY created_at DESC""",
+        (current_user["sub"],),
+    ) as cursor:
+        rows = await cursor.fetchall()
+    
+    articles = [dict(r) for r in rows]
+    
+    if format == "csv":
+        import csv
+        import io
+        output = io.StringIO()
+        if articles:
+            writer = csv.DictWriter(output, fieldnames=list(articles[0].keys()))
+            writer.writeheader()
+            writer.writerows(articles)
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=articles_export.csv"},
+        )
+    
+    return {"items": articles, "total": len(articles)}
 @router.get("/{article_id}")
 async def get_article(
     article_id: str,
@@ -146,3 +214,6 @@ async def get_article(
         raise HTTPException(status_code=404, detail="Article not found")
 
     return dict(row)
+
+
+
