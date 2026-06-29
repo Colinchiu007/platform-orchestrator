@@ -1,3 +1,11 @@
+## [0.6.2] - 2026-06-29
+
+### Added
+- `GET /api/jobs/stats` — daily job statistics endpoint with 7-day aggregation
+  - Returns per-day counts (pending/processing/completed/failed) + totals
+  - Supports ?days=N parameter (1-90, default 7)
+  - 5 tests covering empty, aggregation, auth, days param, invalid input
+
 ## [0.6.1] - 2026-06-29
 
 ### Added
