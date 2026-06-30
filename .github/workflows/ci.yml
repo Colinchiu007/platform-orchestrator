@@ -24,4 +24,38 @@ jobs:
           pip install pytest pytest-asyncio httpx 2>/dev/null || true
       - name: 运行测试
         run: |
-          python -m pytest -v --timeout=30 -x --tb=short 2>&1 || echo "⚠️ 部分测试失败"
+          python -m pytest -v --timeout=30 -x --tb=short 2>&1
+
+  e2e:
+    name: E2E 冒烟
+    runs-on: ubuntu-latest
+    env:
+      PO_SECRET_KEY: ci-dummy-secret-for-testing
+    steps:
+      - uses: actions/checkout@v4
+      - name: 设置 Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 安装依赖
+        run: |
+          pip install -e ".[dev]" 2>/dev/null || pip install -e . 2>/dev/null || true
+          pip install pytest pytest-asyncio httpx uvicorn 2>/dev/null || true
+      - name: 启动服务 + E2E 冒烟
+        run: |
+          # 后台启动 orchestrator（SQLite 测试模式）
+          uvicorn main:app --host 127.0.0.1 --port 8000 &
+          APP_PID=$!
+          # 等待服务就绪（最多 30s）
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/health 2>/dev/null | grep -q 200; then
+              echo "服务就绪 (\${i}s)"
+              break
+            fi
+            sleep 1
+          done
+          # 运行 E2E 冒烟
+          chmod +x scripts/e2e_smoke_test.sh
+          bash scripts/e2e_smoke_test.sh || EXIT_CODE=$?
+          kill \$APP_PID 2>/dev/null || true
+          exit \${EXIT_CODE:-0}
