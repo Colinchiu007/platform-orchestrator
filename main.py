@@ -20,6 +20,7 @@ from middleware.rate_limit import setup_rate_limiting
 from routers import aggregator, auth, dashboard, payment, prompt, publish, splitter, trending, video, web
 from routers import provider_admin, provider_user, usage, viral
 from routers import admin_users, jobs, user_settings
+from services.lifecycle import lifecycle
 from services.provider_router import get_router
 from services.subscription_lifecycle import daily_maintenance
 
@@ -27,6 +28,7 @@ from services.subscription_lifecycle import daily_maintenance
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize databases on startup."""
+    lifecycle.init()
     try:
         await init_db()
         await init_pg_db()
@@ -37,6 +39,7 @@ async def lifespan(app: FastAPI):
         import logging
         logging.warning("Non-critical init error, continuing startup")
     yield
+    await lifecycle.shutdown()
 
 
 def create_app() -> FastAPI:
@@ -59,61 +62,44 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health():
         return {"status": "ok", "version": settings.app_version}
-
     @app.get("/api/health/all")
     async def health_all():
-        """Aggregate health check across all pipeline services."""
+        """Check health of all downstream services. Returns unified status."""
         import asyncio
         import httpx
-        import time
 
         services = {
-            "orchestrator": f"http://127.0.0.1:8000/health",
-            "trendscope": "http://127.0.0.1:8001/health",
-            "sss": "http://127.0.0.1:8002/health",
+            "orchestrator": {"url": "http://localhost:8000/health", "timeout": 5},
+            "trendscope-api": {"url": "http://localhost:8001/health", "timeout": 5},
+            "sss": {"url": "http://localhost:8002/health", "timeout": 5},
+            "unified-frontend": {"url": "http://localhost:3000", "timeout": 5},
         }
 
-        results = {}
-        all_ok = True
+        async def _check(name: str, cfg: dict) -> dict:
+            try:
+                async with httpx.AsyncClient(timeout=cfg["timeout"]) as client:
+                    r = await client.get(cfg["url"])
+                    return {
+                        "name": name,
+                        "status": "ok" if r.status_code < 500 else "error",
+                        "http_code": r.status_code,
+                        "latency_ms": r.elapsed.total_seconds() * 1000 if hasattr(r, "elapsed") else None,
+                    }
+            except httpx.ConnectError:
+                return {"name": name, "status": "error", "error": "connection_refused"}
+            except httpx.TimeoutException:
+                return {"name": name, "status": "error", "error": "timeout"}
+            except Exception as e:
+                return {"name": name, "status": "error", "error": str(e)}
 
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            tasks = {}
-            for name, url in services.items():
-                tasks[name] = asyncio.create_task(_probe_service(client, name, url))
-
-            for name, task in tasks.items():
-                try:
-                    result = await task
-                except Exception as e:
-                    result = {"status": "error", "error": str(e)}
-                results[name] = result
-                if result.get("status") != "ok":
-                    all_ok = False
-
+        results = await asyncio.gather(*[_check(n, c) for n, c in services.items()])
+        all_ok = all(r["status"] == "ok" for r in results)
         return {
             "status": "ok" if all_ok else "degraded",
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "total": len(results),
+            "healthy": sum(1 for r in results if r["status"] == "ok"),
             "services": results,
         }
-
-
-async def _probe_service(client: httpx.AsyncClient, name: str, url: str) -> dict:
-    """Probe a single service endpoint and return its status + latency."""
-    import time
-    start = time.monotonic()
-    try:
-        resp = await client.get(url)
-        latency = round((time.monotonic() - start) * 1000, 1)
-        if resp.status_code == 200:
-            data = resp.json()
-            return {"status": "ok", "latency_ms": latency, "version": data.get("version")}
-        return {"status": "error", "latency_ms": latency, "http_status": resp.status_code}
-    except httpx.ConnectError:
-        latency = round((time.monotonic() - start) * 1000, 1)
-        return {"status": "unreachable", "latency_ms": latency}
-    except Exception as e:
-        latency = round((time.monotonic() - start) * 1000, 1)
-        return {"status": "error", "latency_ms": latency, "error": str(e)}
 
     @app.get("/api/features")
     async def list_features():

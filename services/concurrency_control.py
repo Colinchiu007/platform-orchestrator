@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from services.lifecycle import lifecycle
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
@@ -79,7 +80,8 @@ class VideoConcurrencyController:
     async def submit(self, job_id, coro_factory):
         if not self._enabled:
             self._active_count += 1
-            asyncio.create_task(self._run_with_release(job_id, coro_factory))
+            t = asyncio.create_task(self._run_with_release(job_id, coro_factory))
+            lifecycle.register(t)
             return "processing"
 
         if not self._check_memory():
@@ -93,7 +95,8 @@ class VideoConcurrencyController:
     async def _start_immediately(self, job_id, coro_factory):
         self._active_count += 1
         self._processing_event.clear()
-        asyncio.create_task(self._run_with_release(job_id, coro_factory))
+        t = asyncio.create_task(self._run_with_release(job_id, coro_factory))
+        lifecycle.register(t)
         return "processing"
 
     async def _enqueue(self, job_id, coro_factory):
@@ -146,3 +149,4 @@ class VideoConcurrencyController:
 
 
 video_concurrency = VideoConcurrencyController()
+lifecycle.on_drain(video_concurrency.drain)
