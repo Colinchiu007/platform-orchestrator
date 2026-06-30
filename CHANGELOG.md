@@ -1,3 +1,10 @@
+## [0.6.7] — 2026-06-30
+
+### Documentation
+- **PRD sync**: `video_full_pipeline` and `publish_multi_platform` status updated
+  - Both gates already `enabled: true` in `feature_gates.yaml` since v0.6.x
+  - PRD table previously showed `false` — corrected to match actual gate state
+
 ## [0.6.6] — 2026-06-30
 
 ### Added

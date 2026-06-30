@@ -142,10 +142,10 @@
 | `prompt_optimize` | 1 | true | 提示词优化 |
 | `prompt_classify` | 1 | true | 提示词分类 |
 | `video_fixed_template` | 2 | true | 固定模板视频 |
-| `video_full_pipeline` | 3 | false | 全流水线视频（未开放） |
+| `video_full_pipeline` | 2 | true | 全流水线视频（已开放） |
 | `video_concurrency_control` | 1 | true | 视频串行控制 |
 | `publish_single_platform` | 2 | true | 单平台发布 |
-| `publish_multi_platform` | 3 | false | 多平台发布（未开放） |
+| `publish_multi_platform` | 3 | true | 多平台发布（已开放） |
 
 #### F4：子模块 SDK 集成
 
