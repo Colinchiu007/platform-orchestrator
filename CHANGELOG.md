@@ -1,3 +1,16 @@
+## [0.6.6] — 2026-06-30
+
+### Added
+- **Xiaohongshu (小红书) ECS publisher**: Full 9-step API implementation
+  - `services/xiaohongshu_publisher.py` (801 lines)
+  - 9-step flow: upload permit → COS Init → chunked upload (5MB, 3 retries) → COS Complete → cover upload → sign → publish
+  - `services/xiaohongshu_sign.js`: Standalone Node.js signer extracted from 蚁小二 (getSign$6, 22KB)
+  - X-s/X-t signature via `node xiaohongshu_sign.js` subprocess
+  - ffprobe-based video dimension/duration detection
+  - Cookie-only permit/upload APIs; X-s/X-t only for final publish POST
+- **Platform dispatch**: `elif platform == "xiaohongshu"` in `_publish_video()`
+- **Platform status**: xiaohongshu moved from `coming_soon` to `available`
+
 ## [0.6.5] — 2026-06-30
 
 ### Added
@@ -71,8 +84,6 @@
 
 ### Added
 - 全内容管道编排完成：趋势发现 → 采集 → 改写 → 分句 → 提示词 → 视频 (F5)
-
-
 
 All notable changes to this project will be documented in this file.
 
