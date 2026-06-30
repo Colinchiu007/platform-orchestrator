@@ -1,3 +1,26 @@
+## [0.6.5] — 2026-06-30
+
+### Added
+- **Tencent Video (视频号) publisher**: Full 5-step API implementation
+  - `services/tencent_video_publisher.py` (735 lines)
+  - Auth: auth_data -> helper_upload_params -> chunked upload -> complete -> post_create
+  - 8 MB chunk size, retry with exponential backoff (3 attempts)
+  - Cover image upload support
+  - Scheduled publishing via post_create effectiveTime
+- **Platform dispatch**: `elif platform == "tencent_video"` in `_publish_video()`
+- **Platform status**: tencent_video moved from `coming_soon` to `available`
+
+## [0.6.4] — 2026-06-30
+
+### Added
+- **Scheduled video publishing**: `VideoPublishRequest.scheduled_at` (ISO 8601) field
+  - Background task `_publish_video` waits via `asyncio.sleep()` until scheduled time
+  - Status lifecycle extended: `scheduled` → `downloading` → `publishing` → `success/failed`
+  - API returns `"status": "scheduled"` + `"scheduled_at"` when applicable
+- **Platform framework**: `supported` tuple extended to include `xiaohongshu`, `tencent_video`
+  - `coming_soon` set for friendly error messages on unsupported platforms
+  - Cookie endpoints extended for xiaohongshu and tencent_video
+
 ## [0.6.3] - 2026-06-29
 
 ### Added

@@ -44,6 +44,9 @@ class VideoPublishRequest(BaseModel):
     desc: str = Field(default="", description="Video description")
     tags: list[str] = Field(default=[], description="Up to 12 tags")
     cover_url: Optional[str] = Field(default=None, description="Cover image URL")
+    scheduled_at: Optional[str] = Field(
+        default=None, description="ISO 8601 datetime for scheduled publishing"
+    )
 
 
 @router.post("/publish")
@@ -196,8 +199,15 @@ async def create_video_publish_task(
 
     Auth: JWT Bearer token or X-API-Key header.
     """
-    supported = ("bilibili", "douyin")
+    available = {"bilibili", "douyin", "tencent_video"}
+    coming_soon = {"xiaohongshu"}
+    supported = ("bilibili", "douyin", "xiaohongshu", "tencent_video")
     if body.platform not in supported:
+        if body.platform in coming_soon:
+            raise HTTPException(
+                status_code=400,
+                detail=f"平台 '{body.platform}' 尚未支持，即将上线",
+            )
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported platform '{body.platform}'. Supported: {', '.join(supported)}",
@@ -219,6 +229,11 @@ async def create_video_publish_task(
     )
     await db.commit()
 
+    scheduled_at = body.scheduled_at
+    if scheduled_at:
+        await db.execute("UPDATE jobs SET status = 'scheduled' WHERE id = ?", (task_id,))
+        await db.commit()
+
     background_tasks.add_task(
         _publish_video,
         task_id=task_id,
@@ -228,13 +243,15 @@ async def create_video_publish_task(
         desc=body.desc,
         tags=body.tags,
         cover_url=body.cover_url,
+        scheduled_at=scheduled_at,
     )
 
     return {
         "task_id": task_id,
-        "status": "pending",
+        "status": "scheduled" if scheduled_at else "pending",
         "platform": body.platform,
         "title": body.title,
+        "scheduled_at": scheduled_at,
         "message": "Video publish task created",
     }
 
@@ -254,7 +271,7 @@ async def push_platform_cookies(
 
     Auth: JWT Bearer token or X-API-Key header (ORCHESTRATOR_API_KEY in desktop env).
     """
-    supported = ("douyin", "bilibili")
+    supported = ("douyin", "bilibili", "xiaohongshu", "tencent_video")
     if platform not in supported:
         raise HTTPException(
             status_code=400,
@@ -275,10 +292,11 @@ async def push_platform_cookies(
     if cfg:
         await router.update(platform, provider_data)
     else:
-        display_names = {"douyin": "抖音", "bilibili": "B站"}
+        display_names = {"douyin": "抖音", "bilibili": "B站", "tencent_video": "视频号"}
         base_urls = {
             "douyin": "https://creator.douyin.com",
             "bilibili": "https://member.bilibili.com",
+            "tencent_video": "https://channels.weixin.qq.com",
         }
         await router.create({
             "name": platform,
@@ -308,8 +326,13 @@ async def _publish_video(
     desc: str = "",
     tags: Optional[list[str]] = None,
     cover_url: Optional[str] = None,
+    scheduled_at: Optional[str] = None,
 ):
-    """Background task: download video from URL and publish to platform."""
+    """Background task: download video from URL and publish to platform.
+
+    If scheduled_at is provided (ISO 8601), sleeps until that time
+    before beginning the publish workflow.
+    """
     import aiosqlite
 
     tags = tags or []
@@ -328,6 +351,20 @@ async def _publish_video(
     tmp_dir = tempfile.mkdtemp(prefix="video_publish_")
 
     try:
+        # ── Scheduled publishing: wait until scheduled time ────────────────
+        if scheduled_at:
+            import asyncio
+            from datetime import datetime
+            try:
+                sched_dt = datetime.fromisoformat(scheduled_at)
+                now = datetime.now()
+                if sched_dt > now:
+                    wait_sec = int((sched_dt - now).total_seconds())
+                    await _update("scheduled", {"scheduled_at": scheduled_at, "wait_seconds": wait_sec})
+                    await asyncio.sleep(wait_sec)
+            except (ValueError, ImportError):
+                pass
+
         await _update("downloading", {
             "phase": "download", "percent": 10, "message": "Downloading video...",
         })
@@ -380,6 +417,17 @@ async def _publish_video(
                 cover_path=cover_local,
                 desc=desc,
                 tags=tags,
+            )
+        elif platform == "tencent_video":
+            from services.tencent_video_publisher import publish_video
+
+            result = await publish_video(
+                title=title,
+                video_path=local_path,
+                cover_path=cover_local,
+                desc=desc,
+                tags=tags,
+                scheduled_at=None,
             )
         else:
             result = type("_Result", (), {
@@ -498,7 +546,7 @@ async def save_platform_cookies(
     db=Depends(get_db),
 ):
     """Save platform login cookies (captured from browser login flow)."""
-    supported = ('bilibili', 'douyin')
+    supported = ('bilibili', 'douyin', 'xiaohongshu', 'tencent_video')
     if platform not in supported:
         raise HTTPException(status_code=400, detail=f'Unsupported platform: {platform}')
 
