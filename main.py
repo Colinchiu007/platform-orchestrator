@@ -60,6 +60,61 @@ def create_app() -> FastAPI:
     async def health():
         return {"status": "ok", "version": settings.app_version}
 
+    @app.get("/api/health/all")
+    async def health_all():
+        """Aggregate health check across all pipeline services."""
+        import asyncio
+        import httpx
+        import time
+
+        services = {
+            "orchestrator": f"http://127.0.0.1:8000/health",
+            "trendscope": "http://127.0.0.1:8001/health",
+            "sss": "http://127.0.0.1:8002/health",
+        }
+
+        results = {}
+        all_ok = True
+
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            tasks = {}
+            for name, url in services.items():
+                tasks[name] = asyncio.create_task(_probe_service(client, name, url))
+
+            for name, task in tasks.items():
+                try:
+                    result = await task
+                except Exception as e:
+                    result = {"status": "error", "error": str(e)}
+                results[name] = result
+                if result.get("status") != "ok":
+                    all_ok = False
+
+        return {
+            "status": "ok" if all_ok else "degraded",
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "services": results,
+        }
+
+
+async def _probe_service(client: httpx.AsyncClient, name: str, url: str) -> dict:
+    """Probe a single service endpoint and return its status + latency."""
+    import time
+    start = time.monotonic()
+    try:
+        resp = await client.get(url)
+        latency = round((time.monotonic() - start) * 1000, 1)
+        if resp.status_code == 200:
+            data = resp.json()
+            return {"status": "ok", "latency_ms": latency, "version": data.get("version")}
+        return {"status": "error", "latency_ms": latency, "http_status": resp.status_code}
+    except httpx.ConnectError:
+        latency = round((time.monotonic() - start) * 1000, 1)
+        return {"status": "unreachable", "latency_ms": latency}
+    except Exception as e:
+        latency = round((time.monotonic() - start) * 1000, 1)
+        return {"status": "error", "latency_ms": latency, "error": str(e)}
+
     @app.get("/api/features")
     async def list_features():
         from middleware.feature_gate import load_feature_gates
