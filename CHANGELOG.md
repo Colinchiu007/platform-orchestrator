@@ -1,3 +1,15 @@
+## [0.6.5] — 2026-06-30
+
+### Added
+- **Tencent Video (视频号) publisher**: Full 5-step API implementation
+  - `services/tencent_video_publisher.py` (735 lines)
+  - Auth: auth_data -> helper_upload_params -> chunked upload -> complete -> post_create
+  - 8 MB chunk size, retry with exponential backoff (3 attempts)
+  - Cover image upload support
+  - Scheduled publishing via post_create effectiveTime
+- **Platform dispatch**: `elif platform == "tencent_video"` in `_publish_video()`
+- **Platform status**: tencent_video moved from `coming_soon` to `available`
+
 ## [0.6.4] — 2026-06-30
 
 ### Added

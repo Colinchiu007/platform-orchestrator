@@ -199,8 +199,8 @@ async def create_video_publish_task(
 
     Auth: JWT Bearer token or X-API-Key header.
     """
-    available = {"bilibili", "douyin"}
-    coming_soon = {"xiaohongshu", "tencent_video"}
+    available = {"bilibili", "douyin", "tencent_video"}
+    coming_soon = {"xiaohongshu"}
     supported = ("bilibili", "douyin", "xiaohongshu", "tencent_video")
     if body.platform not in supported:
         if body.platform in coming_soon:
@@ -292,10 +292,11 @@ async def push_platform_cookies(
     if cfg:
         await router.update(platform, provider_data)
     else:
-        display_names = {"douyin": "抖音", "bilibili": "B站"}
+        display_names = {"douyin": "抖音", "bilibili": "B站", "tencent_video": "视频号"}
         base_urls = {
             "douyin": "https://creator.douyin.com",
             "bilibili": "https://member.bilibili.com",
+            "tencent_video": "https://channels.weixin.qq.com",
         }
         await router.create({
             "name": platform,
@@ -416,6 +417,17 @@ async def _publish_video(
                 cover_path=cover_local,
                 desc=desc,
                 tags=tags,
+            )
+        elif platform == "tencent_video":
+            from services.tencent_video_publisher import publish_video
+
+            result = await publish_video(
+                title=title,
+                video_path=local_path,
+                cover_path=cover_local,
+                desc=desc,
+                tags=tags,
+                scheduled_at=None,
             )
         else:
             result = type("_Result", (), {
