@@ -1,3 +1,14 @@
+## [0.6.4] — 2026-06-30
+
+### Added
+- **Scheduled video publishing**: `VideoPublishRequest.scheduled_at` (ISO 8601) field
+  - Background task `_publish_video` waits via `asyncio.sleep()` until scheduled time
+  - Status lifecycle extended: `scheduled` → `downloading` → `publishing` → `success/failed`
+  - API returns `"status": "scheduled"` + `"scheduled_at"` when applicable
+- **Platform framework**: `supported` tuple extended to include `xiaohongshu`, `tencent_video`
+  - `coming_soon` set for friendly error messages on unsupported platforms
+  - Cookie endpoints extended for xiaohongshu and tencent_video
+
 ## [0.6.3] - 2026-06-29
 
 ### Added
