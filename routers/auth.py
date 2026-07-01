@@ -88,11 +88,36 @@ async def register(
     db.add(user)
     await db.flush()
 
-    return {
-        "id": user_uuid,
+    access_token = create_access_token(data={
+        "sub": user_uuid,
         "username": body.username,
-        "email": body.email,
-        "subscription_type": "free",
+        "tier": 1,
+    })
+    # Create refresh token (same pattern as login)
+    refresh_uuid = str(uuid.uuid4())
+    refresh_token_str = create_access_token(
+        data={"sub": user_uuid, "type": "refresh", "jti": refresh_uuid},
+        expires_delta=timedelta(days=settings.refresh_token_expire_days),
+    )
+    expires_at = datetime.utcnow() + timedelta(days=settings.refresh_token_expire_days)
+    db.add(AuthRefreshToken(
+        token_jti=refresh_uuid,
+        user_uuid=user_uuid,
+        expires_at=expires_at,
+    ))
+    await db.commit()
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token_str,
+        "token_type": "bearer",
+        "expires_in": settings.access_token_expire_minutes * 60,
+        "user": {
+            "id": user_uuid,
+            "username": body.username,
+            "subscription_type": "free",
+            "tier": 1,
+        },
     }
 
 
