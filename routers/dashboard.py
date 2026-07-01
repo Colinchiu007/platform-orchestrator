@@ -13,6 +13,7 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel, Field
 
+from config import settings
 from db import DB_PATH, get_db
 from middleware.auth import get_current_user
 from middleware.feature_gate import requires_feature
