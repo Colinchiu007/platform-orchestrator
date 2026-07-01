@@ -27,7 +27,7 @@ class AuthUser(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     uuid = Column(String(36), unique=True, nullable=False, index=True)
     username = Column(String(50), unique=True, nullable=False, index=True)
-    email = Column(String(255), unique=True, nullable=False)
+    email = Column(String(255), unique=True, nullable=True)
     password_hash = Column(String(128), nullable=False)
     subscription_type = Column(String(20), default="free", nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
