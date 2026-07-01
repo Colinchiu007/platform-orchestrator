@@ -57,13 +57,18 @@ async def get_dashboard(
     today_stats = {"processing": 0, "done": 0, "failed": 0}
 
     # 1. Trending — best-effort, silently degrade
-    try:
-        from trendscope.api.config import settings as ts_settings  # type: ignore
-        from sqlalchemy import text as sa_text  # type: ignore
-        from sqlalchemy.ext.asyncio import create_async_engine  # type: ignore
+    # Skip in dev mode (SQLite) — PG not available locally
+    if not settings.database_url.startswith("sqlite"):
+        try:
+            from trendscope.api.config import settings as ts_settings  # type: ignore
+            from sqlalchemy import text as sa_text  # type: ignore
+            from sqlalchemy.ext.asyncio import create_async_engine  # type: ignore
 
-        ts_engine = create_async_engine(ts_settings.database_url)
-        async with ts_engine.connect() as conn:
+            ts_engine = create_async_engine(
+                ts_settings.database_url,
+                connect_args={"connect_timeout": 2},
+            )
+            async with ts_engine.connect() as conn:
             rows = await conn.execute(
                 sa_text(
                     "SELECT title, platform_code, hot_score, url "
