@@ -69,17 +69,17 @@ async def get_dashboard(
                 connect_args={"connect_timeout": 2},
             )
             async with ts_engine.connect() as conn:
-            rows = await conn.execute(
-                sa_text(
-                    "SELECT title, platform_code, hot_score, url "
-                    "FROM hot_articles WHERE is_active = true "
-                    "ORDER BY hot_score DESC LIMIT 10"
+                rows = await conn.execute(
+                    sa_text(
+                        "SELECT title, platform_code, hot_score, url "
+                        "FROM hot_articles WHERE is_active = true "
+                        "ORDER BY hot_score DESC LIMIT 10"
+                    )
                 )
-            )
-            trending = [dict(r) for r in rows.all()]
-        await ts_engine.dispose()
-    except Exception:
-        trending = []
+                trending = [dict(r) for r in rows.all()]
+            await ts_engine.dispose()
+        except Exception:
+            trending = []
 
     # 2. Today's job stats
     try:
