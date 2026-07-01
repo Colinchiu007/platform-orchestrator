@@ -31,7 +31,7 @@ async def init_db() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 uuid TEXT UNIQUE NOT NULL,
                 username TEXT UNIQUE NOT NULL,
-                email TEXT UNIQUE NOT NULL,
+                email TEXT UNIQUE,
                 password_hash TEXT NOT NULL,
                 subscription_type TEXT NOT NULL DEFAULT 'free',
                 is_active INTEGER NOT NULL DEFAULT 1,

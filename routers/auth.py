@@ -59,7 +59,7 @@ def _verify_password(plain: str, hashed: str) -> bool:
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
-@limiter.limit("3/hour")
+@limiter.limit("10/minute")
 async def register(
     request: Request,
     body: RegisterRequest,
