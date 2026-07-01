@@ -27,3 +27,6 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
+
+# Backup
+.git.bak/

@@ -270,7 +270,7 @@ class TestJobRetry:
         me = client.get("/api/auth/me", headers=auth).json()
         uid = me["uuid"]
 
-        job_id = "retry-nf-001"
+        job_id = f"retry-nf-{uuid.uuid4().hex[:8]}"
         async def _setup():
             db = await aiosqlite.connect(DB_PATH)
             await db.execute("PRAGMA journal_mode=WAL;")
@@ -301,7 +301,7 @@ class TestJobsWithRealJob:
         me = client.get("/api/auth/me", headers=auth).json()
         uid = me["uuid"]
 
-        jid = "real-list-001"
+        jid = f"real-list-{uuid.uuid4().hex[:8]}"
         async def _setup():
             db = await aiosqlite.connect(DB_PATH)
             await db.execute("PRAGMA journal_mode=WAL;")
@@ -346,11 +346,13 @@ class TestJobsWithRealJob:
         async def _setup():
             db = await aiosqlite.connect(DB_PATH)
             await db.execute("PRAGMA journal_mode=WAL;")
+            import uuid as _u
             for i, (jt, st) in enumerate(job_types):
+                jid = f"mixed-{_u.uuid4().hex[:8]}"
                 await db.execute(
                     "INSERT OR IGNORE INTO jobs (id, user_id, job_type, status) "
                     "VALUES (?, ?, ?, ?)",
-                    (f"mixed-{i}", uid, jt, st),
+                    (jid, uid, jt, st),
                 )
             await db.commit()
             await db.close()
