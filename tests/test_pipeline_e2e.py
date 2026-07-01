@@ -126,6 +126,18 @@ class TestBasicEndpoints:
         # File not found => empty gates
         assert isinstance(data["features"], dict)
 
+    def test_health_all_endpoint(self, client):
+        """GET /api/health/all returns aggregated service status."""
+        resp = client.get("/api/health/all")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] in ("ok", "degraded")
+        assert "total" in data
+        assert "healthy" in data
+        assert "services" in data
+        assert isinstance(data["services"], list)
+        assert len(data["services"]) == data["total"]
+
 
 class TestAuth:
     """Authentication — register, login, JWT issuance."""
