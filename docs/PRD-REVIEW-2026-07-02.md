@@ -186,6 +186,35 @@
 
 ---
 
+
+## PR 修复状态（2026-07-02 更新）
+
+所有 7 个 PRD 优化 PR 已合并到 main：
+
+| # | 项目 | PR | 状态 | 说明 |
+|---|------|-----|------|------|
+| 1 | platform-orchestrator | [#37](https://github.com/Colinchiu007/platform-orchestrator/pull/37) | ✅ 已合并 | 7 个章节：pipeline 持久化、内存预算、错误码、发布状态机、Feature Gate 统一、认证统一、可用性 SLA |
+| 2 | shared-models | [#11](https://github.com/Colinchiu007/shared-models/pull/11) | ✅ 已合并 | 7 个章节：S2V/MP/Orch 模型、JWT 边界、错误码、限流、质量评分、TrendScope-Pipeline 关联、冻结策略 |
+| 3 | TrendScope | [#12](https://github.com/Colinchiu007/trendscope/pull/12) | ✅ 已合并 | 9 个章节：归一化公式、API 限流、代理池、搜索选型、Pipeline 推送接口、评分矩阵、API 成本、采集深度、接口冲突 |
+| 4 | Story2Video | [#5](https://github.com/Colinchiu007/Story2Video/pull/5) | ✅ 已合并 | 音频限制、VideoAsset/ScenePrompt 扩展、视频时长、并发策略、配额定义、Feature Gate 迁移、发布状态机 |
+| 5 | content-aggregator | [#14](https://github.com/Colinchiu007/content-aggregator/pull/14) | ✅ 已合并 | PRD 权威版本声明、LLM 选型（DeepSeek-V3 主选）、共享库状态 |
+| 6 | smart-sentence-splitter | [#5](https://github.com/Colinchiu007/smart-sentence-splitter/pull/5) | ✅ 已合并 | 语义完整性度量、SSE 格式规范、延迟 SLA、并发限制 |
+| 7 | prompt-engine | [#7](https://github.com/Colinchiu007/prompt-engine/pull/7) | ✅ 已合并 | 平台优先级矩阵、"小黑分镜"定位、成本预算、API 认证 |
+| 8 | Multi-Publish | [#112](https://github.com/Colinchiu007/Multi-Publish/pull/112) | ✅ 已合并 | 用户认证、内存/CPU 预估、WebSocket 重连、回滚/降级、审计日志 |
+
+**跨项目 TOP 8 高危问题解决状态：**
+
+| # | 问题 | 状态 |
+|---|------|------|
+| 1 | TrendScope 与 orchestrator 双用户系统冲突 | ✅ orchestrator 已增加认证统一章节 |
+| 2 | shared-models 未覆盖 Story2Video/Multi-Publish | ✅ 已补充模型定义 |
+| 3 | 异步 pipeline 缺少状态持久化 | ✅ 已增加状态持久化章节 + async_tasks 表 |
+| 4 | 4G 内存 + 同进程 SDK = OOM 风险 | ✅ 已增加内存预算分配表 |
+| 5 | LLM 选型全回避 | ✅ 各 PRD 已补充具体模型选型 |
+| 6 | PRD 去重未完成 | ✅ content-aggregator 已声明权威版本 |
+| 7 | 发布状态粒度不一致 | ✅ 已增加 PublishStage 枚举 |
+| 8 | Feature Gate 三处散落 | ✅ 已增加统一管理章节 |
+
 ## 建议优先行动
 
 1. **统一用户认证方案** — 明确 TrendScope 与 orchestrator 谁是身份权威
