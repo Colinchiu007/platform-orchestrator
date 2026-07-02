@@ -1,8 +1,8 @@
 # PROJECT-000：platform-orchestrator — 统一入口薄壳 — PRD
 
 > **立项日期**: 2026-06-03
-> **最后更新**: 2026-06-27
-> **当前版本**: v0.5.2（Phase 0 已部署，Phase 1 全管线就绪 — pipeline_v2 启用 + ProviderRouter 全栈 + Membership Phase 2 完成）
+> **最后更新**: 2026-07-02
+> **当前版本**: v0.6.0（Phase 0 已部署，Phase 1 全管线就绪 — pipeline_v2 启用 + ProviderRouter 全栈 + Membership Phase 2 完成）
 > **产品定位**: "一站式视频生成平台"的统一入口，薄壳整合所有子模块，提供路由转发、统一鉴权、功能开关和异步编排能力
 > **目标用户**: 自媒体创作者、视频运营团队、内容生产者
 > **技术架构**: FastAPI + Python SDK 同进程导入 + aiosqlite + PostgreSQL + Nginx 反向代理
@@ -81,7 +81,7 @@
 |--------|------|------|
 | 用户注册 | 用户名 / 邮箱 / 密码注册（bcrypt 加密） | ✅ |
 | 用户登录 | 返回 JWT access + refresh token | ✅ |
-| Token 刷新 | refresh token 换发新的 access token（30 天有效） | ✅ |
+| Token 刷新 | refresh token 换发新的 access token（2 小时有效，refresh token 30 天有效） | ✅ |
 | 鉴权中间件 | `get_current_user` 依赖注入，保护私有端点 | ✅ |
 | 订阅等级 | 用户 tier 字段控制功能访问权限 | ✅ |
 | 数据库 | PostgreSQL（auth 表）+ SQLite 本地开发回退 | ✅ |
@@ -544,3 +544,305 @@ python -m pytest tests/test_engine.py -v
 | `routers/video.py` 缺少 `increment_usage` / `QuotaExceededError` 导入 | video pipeline e2e 测试 | 引用 `services.quota` 但未 import |
 | 部分 auth 测试直接查询 `orchestrator.db` 而非 `test_auth.db` | auth/login e2e 测试 | PG→SQLite 迁移后测试未更新 |
 | feature_gates.yaml 在 CI 环境不存在 | features 端点 e2e 测试 | 测试环境需配置 feature_gates.yaml 路径 |
+
+---
+
+## 六、异步 Pipeline 状态持久化（审查报告 #3）
+
+### 6.1 问题
+
+当前 `BackgroundTasks` 无状态持久化，进程崩溃后丢失所有任务。对于视频合成等长耗时任务，这是不可接受的。
+
+### 6.2 解决方案
+
+| 方案 | 工具 | 优点 | 缺点 | 选择 |
+|--------|---------|---------|---------|---------|
+| ① 数据库轮询 | SQLite + 轮询间隔 | 无额外依赖 | 轮询频率受限 | ✅ 采用 |
+| ② 消息队列 | Redis / Celery | 强大的任务管理 | 增加基础设施复杂度 | ⏳ v2 考虑 |
+| ③ JSON 持久化 | 本地 JSON 文件 | 最简单 | 并发文件锁问题 | ❌ |
+
+### 6.3 实现规范
+
+**方案① 数据库轮询：**
+
+```sql
+-- 异步任务表
+CREATE TABLE async_tasks (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,           -- "video_pipeline" | "publish" | "rewrite"
+    status TEXT NOT NULL DEFAULT 'pending',  -- pending/running/completed/failed/cancelled
+    input_data JSON NOT NULL,
+    result JSON,
+    error TEXT,
+    progress INTEGER DEFAULT 0,  -- 0-100
+    user_uuid TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    completed_at TEXT,
+    updated_at TEXT
+);
+
+CREATE INDEX idx_tasks_status ON async_tasks(status);
+CREATE INDEX idx_tasks_user ON async_tasks(user_uuid);
+```
+
+**轮询机制：**
+
+| 角色 | 行为 |
+|--------|---------|
+| 客户端 | `GET /api/jobs/{id}` 轮询状态，间隔 2-5s |
+| 服务端 | 启动任务时写入 pending，完成时更新 completed/failed |
+| 崩溃恢复 | systemd 重启后，服务启动时扫描所有 status=running 的任务，重置为 failed |
+
+### 6.4 API
+
+| 方法 | 路径 | 说明 | 状态 |
+|------|------|------|------|
+| POST | `/api/jobs/async` | 提交异步任务 | ⚠️ 待实现 |
+| GET | `/api/jobs/{id}` | 查询任务状态 | ⚠️ 待实现 |
+| GET | `/api/jobs/my` | 当前用户任务列表 | ⚠️ 待实现 |
+| POST | `/api/jobs/{id}/cancel` | 取消任务 | ⚠️ 待实现 |
+| POST | `/api/jobs/{id}/retry` | 重试失败任务 | ⚠️ 待实现 |
+
+---
+
+## 七、内存预算分配（审查报告 #4）
+
+### 7.1 问题
+
+6 个模块共享进程，无内存隔离策略。4G ECS 上容易 OOM。
+
+### 7.2 内存分配表
+
+| 模块 | 常驻 | 峰值 | 说明 |
+|--------|---------|---------|---------|
+| orchestrator 核心 | 50MB | 50MB | FastAPI + 路由 |
+| TrendScope | 30MB | 80MB | 热榜缓存 |
+| Content-Aggregator | 20MB | 100MB | 内容处理 |
+| Smart-Sentence-Splitter | 10MB | 30MB | 分句模型 |
+| Prompt-Engine | 15MB | 50MB | LLM 调用缓存 |
+| Story2Video | 20MB | 400MB | 视频合成 (主要消耗者) |
+| Multi-Publish | 15MB | 60MB | RPA 浏览器栈 |
+| **合计** | **160MB** | **770MB** | 小于 800MB 限制 |
+
+### 7.3 保护机制
+
+```python
+# 视频任务启动前检查内存
+import psutil
+
+def check_memory_before_task():
+    process = psutil.Process()
+    rss_mb = process.memory_info().rss / 1024 / 1024
+    if rss_mb > 600:  # 峰值线 600MB
+        raise MemoryError(f"当前内存 {rss_mb:.0f}MB，超过安全线")
+```
+
+| 策略 | 说明 | 状态 |
+|--------|---------|---------|
+| 内存监控 | psutil 定时检查，超限告警 | ⚠️ 待实现 |
+| 任务启动前检查 | 视频任务启动前检查 RSS | ⚠️ 待实现 |
+| 单任务强制串行 | 同时只允许 1 个视频任务 | ✅ |
+
+---
+
+## 八、错误码体系（审查报告 #8）
+
+### 8.1 错误码枚举
+
+```python
+class ErrorCode:
+    # 认证 (1xxx)
+    AUTH_INVALID_TOKEN = 1001
+    AUTH_TOKEN_EXPIRED = 1002
+    AUTH_INSUFFICIENT_TIER = 1003
+    AUTH_ADMIN_REQUIRED = 1004
+    AUTH_USER_DISABLED = 1005
+
+    # 功能开关 (2xxx)
+    FEATURE_DISABLED = 2001
+    FEATURE_TIER_REQUIRED = 2002
+
+    # 任务 (3xxx)
+    TASK_INVALID_INPUT = 3001
+    TASK_NOT_FOUND = 3002
+    TASK_ALREADY_RUNNING = 3003
+    TASK_CANCEL_FAILED = 3004
+    TASK_MEMORY_EXCEEDED = 3005
+
+    # 内容 (4xxx)
+    CONTENT_SENSITIVE = 4001
+    CONTENT_TOO_LONG = 4002
+    CONTENT_QUALITY_LOW = 4003
+
+    # 平台 (5xxx)
+    PLATFORM_AUTH_FAILED = 5001
+    PLATFORM_RATE_LIMITED = 5002
+    PLATFORM_PUBLISH_FAILED = 5003
+
+    # LLM (6xxx)
+    LLM_PROVIDER_UNAVAILABLE = 6001
+    LLM_QUOTA_EXCEEDED = 6002
+    LLM_INVALID_RESPONSE = 6003
+
+    # 系统 (9xxx)
+    SYSTEM_INTERNAL_ERROR = 9001
+    SYSTEM_SERVICE_UNAVAILABLE = 9002
+    SYSTEM_DATABASE_ERROR = 9003
+```
+
+### 8.2 API 响应格式
+
+```json
+{
+    "code": 3001,
+    "message": "Invalid input: title is required",
+    "details": {"field": "title"},
+    "request_id": "req_abc123"
+}
+```
+
+| HTTP 状态 | 场景 |
+|---------|---------|
+| 200 | 成功 |
+| 201 | 创建成功 |
+| 400 | 参数错误 (ErrorCode 1xxx/2xxx/3xxx/4xxx) |
+| 401 | 未认证 |
+| 403 | 无权限 |
+| 404 | 资源不存在 |
+| 429 | 速率限制 |
+| 500 | 服务器错误 (ErrorCode 9xxx) |
+
+---
+
+## 九、发布状态机（审查报告 #7）
+
+### 9.1 状态定义
+
+当前 `GENERATED → PUBLISHED` 过于粗糙，实际有 4+ 中间状态。
+
+```python
+from enum import Enum
+
+class PublishStage(str, Enum):
+    PENDING = "pending"           # 待处理
+    CONTENT_READY = "content_ready"   # 内容已准备
+    FORMATTING = "formatting"     # 格式适配中
+    UPLOADING = "uploading"       # 上传中
+    PUBLISHING = "publishing"     # 发布中
+    VERIFYING = "verifying"       # 发布后验证
+    COMPLETED = "completed"       # 发布成功
+    FAILED = "failed"             # 发布失败
+    PARTIAL = "partial"           # 部分平台成功 (多平台发布)
+    CANCELLED = "cancelled"       # 已取消
+```
+
+### 9.2 状态流转
+
+```
+pending → content_ready → formatting → uploading → publishing → verifying → completed
+                ↓                 ↓              ↓               ↓
+             failed           failed           failed            partial/failed
+```
+
+| 角色 | 行为 |
+|--------|---------|
+| Multi-Publish 客户端 | 提交发布任务 → pending |
+| orchestrator | 开始处理 → content_ready |
+| format-adapter | Markdown/富文本转换 → formatting |
+| RPA 引擎 | 打开浏览器 + 填写表单 → publishing |
+| 平台验证 | 检查发布结果 → verifying |
+| 所有平台成功 | → completed |
+| 部分成功 | → partial (返回各平台状态) |
+
+---
+
+## 十、Feature Gate 统一管理（审查报告 #8）
+
+### 10.1 问题
+
+当前三处散落的 Feature Gate：
+
+| 位置 | 方式 | 问题 |
+|--------|---------|---------|
+| platform-orchestrator | `feature_gates.yaml` | ✅ 正确 |
+| Story2Video | localStorage | ❌ 不适用于生产 |
+| Multi-Publish | 无 gate | ❌ 缺失 |
+
+### 10.2 统一方案
+
+**所有 Feature Gate 归并到 orchestrator 的 `feature_gates.yaml`：**
+
+```yaml
+# feature_gates.yaml (统一管理所有子项目的功能开关)
+trending_feed:       { tier: 1, enabled: true }
+video_full_pipeline: { tier: 2, enabled: true }
+publish_multi:       { tier: 3, enabled: true }
+cover_generator:     { tier: 1, enabled: true }   # 新增：封面生成
+title_optimizer:     { tier: 2, enabled: true }   # 新增：标题优化
+markdown_input:      { tier: 1, enabled: true }   # 新增：Markdown 输入
+```
+
+| 子项目 | 机制 | 状态 |
+|--------|---------|---------|
+| Story2Video | 调用 orchestrator `GET /api/features` | ⚠️ 待迁移 |
+| Multi-Publish | 调用 orchestrator `GET /api/features` | ⚠️ 待实现 |
+
+---
+
+## 十一、认证统一方案（审查报告 #1）
+
+### 11.1 身份权威定问题
+
+TrendScope 和 orchestrator 各有独立用户系统，导致“身份分裂”。
+
+### 11.2 统一方案
+
+**orchestrator 为身份权威源：**
+
+| 子项目 | 身份最源 | JWT 验证 | 状态 |
+|--------|---------|---------|---------|
+| orchestrator | 本地 SQLite users | ✅ 本地生成 | ✅ |
+| TrendScope | 调用 orchestrator JWT | ✅ 跨模块验证 | ⚠️ 待迁移 |
+| Content-Aggregator | 无用户系统 (后端服务) | N/A | ✅ |
+| Smart-Sentence-Splitter | 无用户系统 (后端服务) | N/A | ✅ |
+| Prompt-Engine | 无用户系统 (后端服务) | N/A | ✅ |
+| Story2Video | 调用 orchestrator JWT | ✅ | ⚠️ 待对齐 |
+| Multi-Publish | 本地 Electron + Cookie | N/A (桌面应用) | ✅ |
+
+**JWT 扩展（shared-models）：**
+
+```python
+class JWTPayload(BaseModel):
+    sub: str           # user_id
+    username: str
+    role: str          # "user" | "admin"
+    exp: int
+    iss: str = "orchestrator"  # 新增：签发来源
+    aud: str = "platform"      # 新增：目标受众
+```
+
+### 11.3 跨模块 Token 传递
+
+```python
+# TrendScope 验证 orchestrator JWT
+from shared_models.auth import JWTPayload, verify_token
+
+def verify_cross_module_token(token: str) -> JWTPayload:
+    payload = verify_token(token)
+    if payload.iss != "orchestrator":
+        raise AuthError("Invalid token issuer")
+    return payload
+```
+
+---
+
+## 十二、可用性目标（审查报告 #2）
+
+| 指标 | 目标 | 方案 |
+|--------|---------|---------|
+| 可用性 SLA | 99.5% (月偏离 < 3.6h) | systemd 保活 + 健康检查 |
+| API P99 延迟 | < 500ms | 本地 SDK 调用 |
+| 视频任务超时 | 30 分钟 强制终结 | 定时器检查 |
+| 数据库 RPO | < 1 分钟 | aiosqlite WAL 自动刷新 |
+| 进程崩溃恢复 | < 30 秒 | systemd 自动重启 + 未完成任务标记 failed |
